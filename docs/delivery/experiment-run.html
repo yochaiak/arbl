@@ -1,0 +1,233 @@
+<!doctype html><html lang='en'><meta charset='utf-8'><title>ABRL Research Report</title><style>body{font:15px/1.5 system-ui;color:#17212f;max-width:1120px;margin:48px auto;padding:0 24px}h1{font-size:32px}h2{margin-top:32px}th,td{text-align:left;padding:10px;border-bottom:1px solid #d8e1eb}table{width:100%;border-collapse:collapse}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f1f5f9;padding:16px}.evidence{background:#eaf2ff;padding:16px;border-left:4px solid #3966bd}.hash{overflow-wrap:anywhere;font:12px monospace}@media print{body{margin:0}thead{display:table-header-group}tr{break-inside:avoid}}</style><h1>ABRL Research Report</h1><p class='evidence'>SIMULATED - NOT LIVE EVIDENCE / stratified / pilot</p><p>Experiment run experiment-run. Qualification lower bound: see matched conditions.</p><h2>Decision</h2><p>simulated: Recommendations apply only within each target/workflow/environment/evidence stratum; no pooled winner is reported.</p><h2>Matched conditions and decisions</h2><h3>Stratum f2cf03516b1ab486</h3><p>Target target v1; workflow form v3.</p><p>Evidence: browser_only; phase: pilot; required lower confidence bound: 95.0%.</p><p>Environment: Linux / x86_64; profile: persistent; preparation: none.</p><p>Budgets: 1000 browser requests; 104857600 transport bytes; 120 workflow seconds.</p><p>Network: residential / IL; DNS: upstream_dns_trust_boundary; cost currency: EUR.</p><p>simulated: Simulated observations cannot produce a final live recommendation.</p><p>Candidate IDs: None</p><h3>Stratum 3e21ff82234c6fef</h3><p>Target target v1; workflow landing v3.</p><p>Evidence: browser_only; phase: pilot; required lower confidence bound: 95.0%.</p><p>Environment: Linux / x86_64; profile: persistent; preparation: none.</p><p>Budgets: 1000 browser requests; 104857600 transport bytes; 120 workflow seconds.</p><p>Network: residential / IL; DNS: upstream_dns_trust_boundary; cost currency: EUR.</p><p>simulated: Simulated observations cannot produce a final live recommendation.</p><p>Candidate IDs: None</p><h2>Results</h2><table><thead><tr><th>Browser</th><th>N</th><th>Primary success</th><th>95% interval</th><th>Verified</th><th>p50 ms</th><th>Cost / success</th></tr></thead><tbody><tr><td>cloakbrowser / f2cf0351</td><td>4</td><td>3 / 4</td><td>30.1% to 95.4%</td><td>0.0%</td><td>150</td><td>Unknown</td></tr><tr><td>playwright / f2cf0351</td><td>4</td><td>3 / 4</td><td>30.1% to 95.4%</td><td>0.0%</td><td>150</td><td>Unknown</td></tr><tr><td>cloakbrowser / 3e21ff82</td><td>4</td><td>3 / 4</td><td>30.1% to 95.4%</td><td>0.0%</td><td>150</td><td>Unknown</td></tr><tr><td>playwright / 3e21ff82</td><td>4</td><td>3 / 4</td><td>30.1% to 95.4%</td><td>0.0%</td><td>150</td><td>Unknown</td></tr></tbody></table><h2>Reliability, recovery and cost</h2><h3>cloakbrowser / dc8fdbba9d47a1bf</h3><p>First attempt: 3 / 4; recovered: 0. Completion: 75.0%; verified Clean among verified sessions: Unavailable. Latency p95: 150 ms. Interval: wilson.</p><p>Verified raw verdict counts: {}. Operational outcomes: {&#x27;completed&#x27;: 3, &#x27;failed&#x27;: 1}. Cost total: None; basis: [&#x27;unknown&#x27;]; currency: EUR.</p><p>Measured proxy bytes: 10000000; known proxy estimates by currency: {&#x27;EUR&#x27;: 0.02}. Estimates are not reconciled provider billing.</p><h3>playwright / a07c2690cfff2849</h3><p>First attempt: 3 / 4; recovered: 0. Completion: 75.0%; verified Clean among verified sessions: Unavailable. Latency p95: 150 ms. Interval: wilson.</p><p>Verified raw verdict counts: {}. Operational outcomes: {&#x27;completed&#x27;: 3, &#x27;failed&#x27;: 1}. Cost total: None; basis: [&#x27;unknown&#x27;]; currency: EUR.</p><p>Measured proxy bytes: 10000000; known proxy estimates by currency: {&#x27;EUR&#x27;: 0.02}. Estimates are not reconciled provider billing.</p><h3>cloakbrowser / 5a726237f2de1d8c</h3><p>First attempt: 3 / 4; recovered: 0. Completion: 75.0%; verified Clean among verified sessions: Unavailable. Latency p95: 150 ms. Interval: wilson.</p><p>Verified raw verdict counts: {}. Operational outcomes: {&#x27;completed&#x27;: 3, &#x27;failed&#x27;: 1}. Cost total: None; basis: [&#x27;unknown&#x27;]; currency: EUR.</p><p>Measured proxy bytes: 10000000; known proxy estimates by currency: {&#x27;EUR&#x27;: 0.02}. Estimates are not reconciled provider billing.</p><h3>playwright / 28452a94b3acd318</h3><p>First attempt: 3 / 4; recovered: 0. Completion: 75.0%; verified Clean among verified sessions: Unavailable. Latency p95: 150 ms. Interval: wilson.</p><p>Verified raw verdict counts: {}. Operational outcomes: {&#x27;completed&#x27;: 3, &#x27;failed&#x27;: 1}. Cost total: None; basis: [&#x27;unknown&#x27;]; currency: EUR.</p><p>Measured proxy bytes: 10000000; known proxy estimates by currency: {&#x27;EUR&#x27;: 0.02}. Estimates are not reconciled provider billing.</p><h2>Pairwise effects</h2><pre>[
+  {
+    &quot;a&quot;: &quot;dc8fdbba9d47a1bf&quot;,
+    &quot;b&quot;: &quot;a07c2690cfff2849&quot;,
+    &quot;difference&quot;: 0.0,
+    &quot;p_value&quot;: 1.0,
+    &quot;adjusted_p_value&quot;: 1.0,
+    &quot;significant&quot;: false,
+    &quot;method&quot;: &quot;fisher_exact&quot;,
+    &quot;stratum_id&quot;: &quot;f2cf03516b1ab486&quot;
+  },
+  {
+    &quot;a&quot;: &quot;5a726237f2de1d8c&quot;,
+    &quot;b&quot;: &quot;28452a94b3acd318&quot;,
+    &quot;difference&quot;: 0.0,
+    &quot;p_value&quot;: 1.0,
+    &quot;adjusted_p_value&quot;: 1.0,
+    &quot;significant&quot;: false,
+    &quot;method&quot;: &quot;fisher_exact&quot;,
+    &quot;stratum_id&quot;: &quot;3e21ff82234c6fef&quot;
+  }
+]</pre><h2>Methodology</h2><pre>{
+  &quot;primary_outcome&quot;: &quot;Per-stratum verified Clean plus completion, or browser-only completion&quot;,
+  &quot;pairwise&quot;: &quot;Matched-stratum tests with Holm correction across all run tests&quot;,
+  &quot;sample_unit&quot;: &quot;logical allocation, including creation failures; retries add no samples&quot;,
+  &quot;execution_order&quot;: &quot;seeded_cross_group_shuffle_v1&quot;,
+  &quot;seed&quot;: 13,
+  &quot;reproduction&quot;: &quot;Use the immutable experiment revision and recorded cross-group dispatch plan; never overwrite the exported snapshot.&quot;
+}</pre><h2>Limitations</h2><ul><li>Different targets, workflow versions, environments, evidence modes, phases, thresholds and cost currencies are never pooled.</li><li>Every declared batch must finish before any stratum can qualify; failed creation allocations remain in the planned denominator.</li><li>Qualification also requires the operational reliability lower bound to meet the threshold; completed workflows remain separately visible when cleanup or persistence fails.</li><li>Browser-only rankings measure observable workflow completion. Any independently verified provider observations remain separate from that primary outcome.</li><li>Missing cost inputs remain unknown and cannot support a cost advantage claim.</li><li>All planned logical sessions, including infrastructure failures and cancellations, stay in operational denominators; retries never add samples.</li></ul><h2>Environment and reproducibility</h2><h3>cloakbrowser / dc8fdbba9d47a1bf</h3><pre>{
+  &quot;architecture&quot;: &quot;x86_64&quot;,
+  &quot;browser_version&quot;: &quot;Simulated/158.0&quot;,
+  &quot;dns_mode&quot;: &quot;upstream_dns_trust_boundary&quot;,
+  &quot;engine_version&quot;: null,
+  &quot;os&quot;: &quot;Linux&quot;,
+  &quot;persistence&quot;: &quot;persistent&quot;,
+  &quot;preparation&quot;: &quot;none&quot;,
+  &quot;preparation_config&quot;: {
+    &quot;mode&quot;: &quot;none&quot;
+  },
+  &quot;proxy_policy_id&quot;: null,
+  &quot;proxy_policy_version&quot;: null,
+  &quot;proxy_product&quot;: &quot;residential&quot;,
+  &quot;proxy_region&quot;: &quot;IL&quot;,
+  &quot;request_budget&quot;: 1000,
+  &quot;traffic_budget_bytes&quot;: 104857600,
+  &quot;workflow_timeout_seconds&quot;: 120,
+  &quot;wrapper_version&quot;: &quot;demo&quot;
+}</pre><h3>playwright / a07c2690cfff2849</h3><pre>{
+  &quot;architecture&quot;: &quot;x86_64&quot;,
+  &quot;browser_version&quot;: &quot;Simulated/158.0&quot;,
+  &quot;dns_mode&quot;: &quot;upstream_dns_trust_boundary&quot;,
+  &quot;engine_version&quot;: null,
+  &quot;os&quot;: &quot;Linux&quot;,
+  &quot;persistence&quot;: &quot;persistent&quot;,
+  &quot;preparation&quot;: &quot;none&quot;,
+  &quot;preparation_config&quot;: {
+    &quot;mode&quot;: &quot;none&quot;
+  },
+  &quot;proxy_policy_id&quot;: null,
+  &quot;proxy_policy_version&quot;: null,
+  &quot;proxy_product&quot;: &quot;residential&quot;,
+  &quot;proxy_region&quot;: &quot;IL&quot;,
+  &quot;request_budget&quot;: 1000,
+  &quot;traffic_budget_bytes&quot;: 104857600,
+  &quot;workflow_timeout_seconds&quot;: 120,
+  &quot;wrapper_version&quot;: &quot;demo&quot;
+}</pre><h3>cloakbrowser / 5a726237f2de1d8c</h3><pre>{
+  &quot;architecture&quot;: &quot;x86_64&quot;,
+  &quot;browser_version&quot;: &quot;Simulated/158.0&quot;,
+  &quot;dns_mode&quot;: &quot;upstream_dns_trust_boundary&quot;,
+  &quot;engine_version&quot;: null,
+  &quot;os&quot;: &quot;Linux&quot;,
+  &quot;persistence&quot;: &quot;persistent&quot;,
+  &quot;preparation&quot;: &quot;none&quot;,
+  &quot;preparation_config&quot;: {
+    &quot;mode&quot;: &quot;none&quot;
+  },
+  &quot;proxy_policy_id&quot;: null,
+  &quot;proxy_policy_version&quot;: null,
+  &quot;proxy_product&quot;: &quot;residential&quot;,
+  &quot;proxy_region&quot;: &quot;IL&quot;,
+  &quot;request_budget&quot;: 1000,
+  &quot;traffic_budget_bytes&quot;: 104857600,
+  &quot;workflow_timeout_seconds&quot;: 120,
+  &quot;wrapper_version&quot;: &quot;demo&quot;
+}</pre><h3>playwright / 28452a94b3acd318</h3><pre>{
+  &quot;architecture&quot;: &quot;x86_64&quot;,
+  &quot;browser_version&quot;: &quot;Simulated/158.0&quot;,
+  &quot;dns_mode&quot;: &quot;upstream_dns_trust_boundary&quot;,
+  &quot;engine_version&quot;: null,
+  &quot;os&quot;: &quot;Linux&quot;,
+  &quot;persistence&quot;: &quot;persistent&quot;,
+  &quot;preparation&quot;: &quot;none&quot;,
+  &quot;preparation_config&quot;: {
+    &quot;mode&quot;: &quot;none&quot;
+  },
+  &quot;proxy_policy_id&quot;: null,
+  &quot;proxy_policy_version&quot;: null,
+  &quot;proxy_product&quot;: &quot;residential&quot;,
+  &quot;proxy_region&quot;: &quot;IL&quot;,
+  &quot;request_budget&quot;: 1000,
+  &quot;traffic_budget_bytes&quot;: 104857600,
+  &quot;workflow_timeout_seconds&quot;: 120,
+  &quot;wrapper_version&quot;: &quot;demo&quot;
+}</pre><pre>{
+  &quot;name&quot;: &quot;Cross-group research&quot;,
+  &quot;groups&quot;: [
+    {
+      &quot;target&quot;: {
+        &quot;name&quot;: &quot;Owned test&quot;,
+        &quot;origin&quot;: &quot;https://owned.example&quot;,
+        &quot;mode&quot;: &quot;browser_only&quot;
+      },
+      &quot;workflow&quot;: {
+        &quot;name&quot;: &quot;Inspect owned landing fixture&quot;,
+        &quot;steps&quot;: [
+          {
+            &quot;action&quot;: &quot;navigate&quot;,
+            &quot;url&quot;: &quot;/&quot;
+          }
+        ]
+      },
+      &quot;target_id&quot;: &quot;target&quot;,
+      &quot;target_version&quot;: 1,
+      &quot;workflow_id&quot;: &quot;landing&quot;,
+      &quot;workflow_version&quot;: 3,
+      &quot;mode&quot;: &quot;demo&quot;,
+      &quot;phase&quot;: &quot;pilot&quot;,
+      &quot;seed&quot;: 13,
+      &quot;reliability_target&quot;: 0.95,
+      &quot;preparation&quot;: {
+        &quot;mode&quot;: &quot;none&quot;
+      },
+      &quot;request_budget&quot;: 1000,
+      &quot;traffic_budget_bytes&quot;: 104857600,
+      &quot;timeout_seconds&quot;: 120,
+      &quot;cost_currency&quot;: &quot;EUR&quot;
+    },
+    {
+      &quot;target&quot;: {
+        &quot;name&quot;: &quot;Owned test&quot;,
+        &quot;origin&quot;: &quot;https://owned.example&quot;,
+        &quot;mode&quot;: &quot;browser_only&quot;
+      },
+      &quot;workflow&quot;: {
+        &quot;name&quot;: &quot;Inspect owned landing fixture&quot;,
+        &quot;steps&quot;: [
+          {
+            &quot;action&quot;: &quot;navigate&quot;,
+            &quot;url&quot;: &quot;/&quot;
+          }
+        ]
+      },
+      &quot;target_id&quot;: &quot;target&quot;,
+      &quot;target_version&quot;: 1,
+      &quot;workflow_id&quot;: &quot;landing&quot;,
+      &quot;workflow_version&quot;: 3,
+      &quot;mode&quot;: &quot;demo&quot;,
+      &quot;phase&quot;: &quot;pilot&quot;,
+      &quot;seed&quot;: 13,
+      &quot;reliability_target&quot;: 0.95,
+      &quot;preparation&quot;: {
+        &quot;mode&quot;: &quot;none&quot;
+      },
+      &quot;request_budget&quot;: 1000,
+      &quot;traffic_budget_bytes&quot;: 104857600,
+      &quot;timeout_seconds&quot;: 120,
+      &quot;cost_currency&quot;: &quot;EUR&quot;
+    },
+    {
+      &quot;target&quot;: {
+        &quot;name&quot;: &quot;Owned test&quot;,
+        &quot;origin&quot;: &quot;https://owned.example&quot;,
+        &quot;mode&quot;: &quot;browser_only&quot;
+      },
+      &quot;workflow&quot;: {
+        &quot;name&quot;: &quot;Submit controlled test form&quot;,
+        &quot;steps&quot;: [
+          {
+            &quot;action&quot;: &quot;navigate&quot;,
+            &quot;url&quot;: &quot;/&quot;
+          }
+        ]
+      },
+      &quot;target_id&quot;: &quot;target&quot;,
+      &quot;target_version&quot;: 1,
+      &quot;workflow_id&quot;: &quot;form&quot;,
+      &quot;workflow_version&quot;: 3,
+      &quot;mode&quot;: &quot;demo&quot;,
+      &quot;phase&quot;: &quot;pilot&quot;,
+      &quot;seed&quot;: 13,
+      &quot;reliability_target&quot;: 0.95,
+      &quot;preparation&quot;: {
+        &quot;mode&quot;: &quot;none&quot;
+      },
+      &quot;request_budget&quot;: 1000,
+      &quot;traffic_budget_bytes&quot;: 104857600,
+      &quot;timeout_seconds&quot;: 120,
+      &quot;cost_currency&quot;: &quot;EUR&quot;
+    },
+    {
+      &quot;target&quot;: {
+        &quot;name&quot;: &quot;Owned test&quot;,
+        &quot;origin&quot;: &quot;https://owned.example&quot;,
+        &quot;mode&quot;: &quot;browser_only&quot;
+      },
+      &quot;workflow&quot;: {
+        &quot;name&quot;: &quot;Submit controlled test form&quot;,
+        &quot;steps&quot;: [
+          {
+            &quot;action&quot;: &quot;navigate&quot;,
+            &quot;url&quot;: &quot;/&quot;
+          }
+        ]
+      },
+      &quot;target_id&quot;: &quot;target&quot;,
+      &quot;target_version&quot;: 1,
+      &quot;workflow_id&quot;: &quot;form&quot;,
+      &quot;workflow_version&quot;: 3,
+      &quot;mode&quot;: &quot;demo&quot;,
+      &quot;phase&quot;: &quot;pilot&quot;,
+      &quot;seed&quot;: 13,
+      &quot;reliability_target&quot;: 0.95,
+      &quot;preparation&quot;: {
+        &quot;mode&quot;: &quot;none&quot;
+      },
+      &quot;request_budget&quot;: 1000,
+      &quot;traffic_budget_bytes&quot;: 104857600,
+      &quot;timeout_seconds&quot;: 120,
+      &quot;cost_currency&quot;: &quot;EUR&quot;
+    }
+  ]
+}</pre><p class='hash'>Snapshot SHA-256: 2539ba043ec009b6c79a7d123fdcadbbf43859a9cdaac23b22ad1346b4e7f3bf</p><h2>Trial trace</h2><table><thead><tr><th>Session / allocation</th><th>Outcome</th><th>Verification</th><th>Raw codes</th><th>Attempts</th></tr></thead><tbody><tr><td>landing-playwright-session-0001</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>landing-playwright-session-0002</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>landing-playwright-session-0003</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>landing-playwright-session-0004</td><td>failed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>landing-cloakbrowser-session-0001</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>landing-cloakbrowser-session-0002</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>landing-cloakbrowser-session-0003</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>landing-cloakbrowser-session-0004</td><td>failed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>form-playwright-session-0001</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>form-playwright-session-0002</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>form-playwright-session-0003</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>form-playwright-session-0004</td><td>failed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>form-cloakbrowser-session-0001</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>form-cloakbrowser-session-0002</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>form-cloakbrowser-session-0003</td><td>completed</td><td>unavailable</td><td>[]</td><td>1</td></tr><tr><td>form-cloakbrowser-session-0004</td><td>failed</td><td>unavailable</td><td>[]</td><td>1</td></tr></tbody></table></html>

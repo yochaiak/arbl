@@ -1,0 +1,363 @@
+{
+  "scope": "Local real Chromium execution; not provider or cloud validation",
+  "runs": [
+    {
+      "batch_id": "acc51a1e-c529-44dc-9fc0-80cddd652eb1",
+      "sessions": [
+        {
+          "id": "b79855c8-ad29-4f86-859f-58077b150132",
+          "profile_id": "0a27e080-644b-4bfc-8986-f336b18622c0",
+          "status": "completed",
+          "mode": "live",
+          "workflow_outcome": "completed",
+          "outcome": "completed",
+          "epoch": 1,
+          "attempt_number": 1,
+          "elapsed_ms": 5067,
+          "started_at": "2026-11-12T19:50:07.076816+00:00",
+          "finished_at": "2026-11-12T19:50:12.303843+00:00",
+          "browser_version": "Chrome/158.0.8127.18",
+          "os": "Darwin",
+          "architecture": "arm64",
+          "profile_saved": true,
+          "runtime_stopped": true,
+          "preparation": {
+            "seed": 42,
+            "duration_seconds": 2.0,
+            "actions": [
+              {
+                "at_seconds": 0.0,
+                "action": "scroll",
+                "delta_y": -175
+              },
+              {
+                "at_seconds": 1.4898,
+                "action": "scroll",
+                "delta_y": -58
+              }
+            ],
+            "ground_truth": "automated",
+            "executed": [
+              {
+                "at_seconds": 0.0,
+                "action": "scroll",
+                "delta_y": -175
+              },
+              {
+                "at_seconds": 1.4898,
+                "action": "scroll",
+                "delta_y": -58
+              }
+            ]
+          },
+          "request_usage": {
+            "total": 2,
+            "by_phase": {
+              "automated_preparation": 1,
+              "workflow": 1
+            },
+            "budget": 1000,
+            "exhausted": false,
+            "measurement": "intercepted_http_requests"
+          },
+          "transport_usage": {
+            "upstream_bytes": 790,
+            "downstream_bytes": 3410,
+            "total_bytes": 4200,
+            "vendor_control_bytes": 0,
+            "budget_consumed_bytes": 4200,
+            "limit_bytes": 104857600,
+            "budget_exhausted": false,
+            "measurement": "browser_payload_transport_bytes",
+            "billing_basis": "estimate_excludes_protocol_overhead"
+          },
+          "usage_attempts": [
+            {
+              "attempt_id": "94c42f55-9626-41b3-b9d6-6a4930294c35",
+              "provider": null,
+              "proxy_bytes": 0,
+              "browser_payload_bytes": 4200,
+              "upstream_bytes": 790,
+              "downstream_bytes": 3410,
+              "vendor_control_bytes": 0,
+              "cost_per_gb": null,
+              "cost_currency": null,
+              "estimated_proxy_cost": 0.0,
+              "measurement": "browser_payload_transport_bytes",
+              "billing_basis": "configured_decimal_GB_rate_times_measured_proxy_payload; protocol_overhead_and_invoice_adjustments_excluded",
+              "billing_status": "estimated_not_billed",
+              "budget_exhausted": false
+            }
+          ],
+          "restored_generation": null
+        },
+        {
+          "id": "821279d4-5364-4fd9-b51c-52f518e7382c",
+          "profile_id": "4749ca78-5e69-4872-a4ea-3f807aad2870",
+          "status": "completed",
+          "mode": "live",
+          "workflow_outcome": "completed",
+          "outcome": "completed",
+          "epoch": 1,
+          "attempt_number": 1,
+          "elapsed_ms": 6130,
+          "started_at": "2026-11-12T19:50:06.013769+00:00",
+          "finished_at": "2026-11-12T19:50:12.300993+00:00",
+          "browser_version": "Chrome/158.0.8127.18",
+          "os": "Darwin",
+          "architecture": "arm64",
+          "profile_saved": true,
+          "runtime_stopped": true,
+          "preparation": {
+            "seed": 42,
+            "duration_seconds": 2.0,
+            "actions": [
+              {
+                "at_seconds": 0.0,
+                "action": "scroll",
+                "delta_y": -175
+              },
+              {
+                "at_seconds": 1.4898,
+                "action": "scroll",
+                "delta_y": -58
+              }
+            ],
+            "ground_truth": "automated",
+            "executed": [
+              {
+                "at_seconds": 0.0,
+                "action": "scroll",
+                "delta_y": -175
+              },
+              {
+                "at_seconds": 1.4898,
+                "action": "scroll",
+                "delta_y": -58
+              }
+            ]
+          },
+          "request_usage": {
+            "total": 2,
+            "by_phase": {
+              "automated_preparation": 1,
+              "workflow": 1
+            },
+            "budget": 1000,
+            "exhausted": false,
+            "measurement": "intercepted_http_requests"
+          },
+          "transport_usage": {
+            "upstream_bytes": 790,
+            "downstream_bytes": 3410,
+            "total_bytes": 4200,
+            "vendor_control_bytes": 0,
+            "budget_consumed_bytes": 4200,
+            "limit_bytes": 104857600,
+            "budget_exhausted": false,
+            "measurement": "browser_payload_transport_bytes",
+            "billing_basis": "estimate_excludes_protocol_overhead"
+          },
+          "usage_attempts": [
+            {
+              "attempt_id": "84b10105-fbfb-4fb3-b9da-a79bf4b794ab",
+              "provider": null,
+              "proxy_bytes": 0,
+              "browser_payload_bytes": 4200,
+              "upstream_bytes": 790,
+              "downstream_bytes": 3410,
+              "vendor_control_bytes": 0,
+              "cost_per_gb": null,
+              "cost_currency": null,
+              "estimated_proxy_cost": 0.0,
+              "measurement": "browser_payload_transport_bytes",
+              "billing_basis": "configured_decimal_GB_rate_times_measured_proxy_payload; protocol_overhead_and_invoice_adjustments_excluded",
+              "billing_status": "estimated_not_billed",
+              "budget_exhausted": false
+            }
+          ],
+          "restored_generation": null
+        }
+      ]
+    },
+    {
+      "batch_id": "fd82f0e6-72fb-4356-8326-48d7ab413dc6",
+      "sessions": [
+        {
+          "id": "cacacfc5-dc78-4fbf-93a7-9e3513464f85",
+          "profile_id": "0a27e080-644b-4bfc-8986-f336b18622c0",
+          "status": "completed",
+          "mode": "live",
+          "workflow_outcome": "completed",
+          "outcome": "completed",
+          "epoch": 2,
+          "attempt_number": 1,
+          "elapsed_ms": 3032,
+          "started_at": "2026-11-12T19:50:14.243748+00:00",
+          "finished_at": "2026-11-12T19:50:17.393789+00:00",
+          "browser_version": "Chrome/158.0.8127.18",
+          "os": "Darwin",
+          "architecture": "arm64",
+          "profile_saved": true,
+          "runtime_stopped": true,
+          "preparation": {
+            "seed": 42,
+            "duration_seconds": 2.0,
+            "actions": [
+              {
+                "at_seconds": 0.0,
+                "action": "scroll",
+                "delta_y": -175
+              },
+              {
+                "at_seconds": 1.4898,
+                "action": "scroll",
+                "delta_y": -58
+              }
+            ],
+            "ground_truth": "automated",
+            "executed": [
+              {
+                "at_seconds": 0.0,
+                "action": "scroll",
+                "delta_y": -175
+              },
+              {
+                "at_seconds": 1.4898,
+                "action": "scroll",
+                "delta_y": -58
+              }
+            ]
+          },
+          "request_usage": {
+            "total": 2,
+            "by_phase": {
+              "automated_preparation": 1,
+              "workflow": 1
+            },
+            "budget": 1000,
+            "exhausted": false,
+            "measurement": "intercepted_http_requests"
+          },
+          "transport_usage": {
+            "upstream_bytes": 790,
+            "downstream_bytes": 3410,
+            "total_bytes": 4200,
+            "vendor_control_bytes": 0,
+            "budget_consumed_bytes": 4200,
+            "limit_bytes": 104857600,
+            "budget_exhausted": false,
+            "measurement": "browser_payload_transport_bytes",
+            "billing_basis": "estimate_excludes_protocol_overhead"
+          },
+          "usage_attempts": [
+            {
+              "attempt_id": "40c05544-b88c-48eb-8e9d-db6c91558398",
+              "provider": null,
+              "proxy_bytes": 0,
+              "browser_payload_bytes": 4200,
+              "upstream_bytes": 790,
+              "downstream_bytes": 3410,
+              "vendor_control_bytes": 0,
+              "cost_per_gb": null,
+              "cost_currency": null,
+              "estimated_proxy_cost": 0.0,
+              "measurement": "browser_payload_transport_bytes",
+              "billing_basis": "configured_decimal_GB_rate_times_measured_proxy_payload; protocol_overhead_and_invoice_adjustments_excluded",
+              "billing_status": "estimated_not_billed",
+              "budget_exhausted": false
+            }
+          ],
+          "restored_generation": "1-1"
+        },
+        {
+          "id": "ec71f2c4-ee8d-4b37-abca-7b3da10c7fc9",
+          "profile_id": "4749ca78-5e69-4872-a4ea-3f807aad2870",
+          "status": "completed",
+          "mode": "live",
+          "workflow_outcome": "completed",
+          "outcome": "completed",
+          "epoch": 2,
+          "attempt_number": 1,
+          "elapsed_ms": 3041,
+          "started_at": "2026-11-12T19:50:13.212392+00:00",
+          "finished_at": "2026-11-12T19:50:16.400852+00:00",
+          "browser_version": "Chrome/158.0.8127.18",
+          "os": "Darwin",
+          "architecture": "arm64",
+          "profile_saved": true,
+          "runtime_stopped": true,
+          "preparation": {
+            "seed": 42,
+            "duration_seconds": 2.0,
+            "actions": [
+              {
+                "at_seconds": 0.0,
+                "action": "scroll",
+                "delta_y": -175
+              },
+              {
+                "at_seconds": 1.4898,
+                "action": "scroll",
+                "delta_y": -58
+              }
+            ],
+            "ground_truth": "automated",
+            "executed": [
+              {
+                "at_seconds": 0.0,
+                "action": "scroll",
+                "delta_y": -175
+              },
+              {
+                "at_seconds": 1.4898,
+                "action": "scroll",
+                "delta_y": -58
+              }
+            ]
+          },
+          "request_usage": {
+            "total": 2,
+            "by_phase": {
+              "automated_preparation": 1,
+              "workflow": 1
+            },
+            "budget": 1000,
+            "exhausted": false,
+            "measurement": "intercepted_http_requests"
+          },
+          "transport_usage": {
+            "upstream_bytes": 790,
+            "downstream_bytes": 3410,
+            "total_bytes": 4200,
+            "vendor_control_bytes": 0,
+            "budget_consumed_bytes": 4200,
+            "limit_bytes": 104857600,
+            "budget_exhausted": false,
+            "measurement": "browser_payload_transport_bytes",
+            "billing_basis": "estimate_excludes_protocol_overhead"
+          },
+          "usage_attempts": [
+            {
+              "attempt_id": "ad0c7b68-fd3a-42b4-96e6-db07b53fee43",
+              "provider": null,
+              "proxy_bytes": 0,
+              "browser_payload_bytes": 4200,
+              "upstream_bytes": 790,
+              "downstream_bytes": 3410,
+              "vendor_control_bytes": 0,
+              "cost_per_gb": null,
+              "cost_currency": null,
+              "estimated_proxy_cost": 0.0,
+              "measurement": "browser_payload_transport_bytes",
+              "billing_basis": "configured_decimal_GB_rate_times_measured_proxy_payload; protocol_overhead_and_invoice_adjustments_excluded",
+              "billing_status": "estimated_not_billed",
+              "budget_exhausted": false
+            }
+          ],
+          "restored_generation": "1-1"
+        }
+      ]
+    }
+  ]
+}

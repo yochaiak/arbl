@@ -1,49 +1,64 @@
-# ABRL · Browser Workflow Lab
+# ABRL · Browser Research Lab
 
-Run authorized browser workflows and measure how often they complete, how long they take, and where they stop. ABRL provides an editable site registry, versioned workflows, and reproducible local trials using standard Playwright Chromium. AdScore verification is a separate, manually initiated diagnostic for an authorized integration.
+ABRL runs authorized browser workflows, manages independent browser profiles and sessions, schedules reproducible experiments, and compares observable completion with server-verified AdScore evidence. Simulated data is explicitly labeled and cannot produce a live recommendation.
 
-## Start locally
+The application supports local macOS development and an isolated Kubernetes browser execution architecture for Hetzner. Source implementation, automated validation, live validation, and outstanding prerequisites are tracked separately in the [delivery ledger](docs/delivery/requirements.md). Infrastructure manifests passing validation do not establish production recovery or 500-browser capacity.
 
-Install Docker with Compose, `uv`, Node.js 22.15+, pnpm, and Make. Apple Silicon macOS runs Chromium natively. On Linux, install Playwright's browser dependencies with `uv run playwright install --with-deps chromium` after `uv sync --locked`.
+## Run locally
+
+Install Docker with Compose, uv, Node.js 24, pnpm, and Make. On Linux install browser system dependencies with `uv run playwright install --with-deps chromium` after syncing dependencies.
 
 ```sh
 make setup
 make dev
 ```
 
-Open **http://localhost:8430** and enter the value of `ABRL_OPERATOR_TOKEN` from the local `.env`. `make configure` generates local credentials once with owner-only file permissions. The API listens on **http://127.0.0.1:8400**. Both bind to loopback. For separate processes use `make infra migrate`, then `make api`, `make worker`, and `make web` in separate terminals.
+Open **http://localhost:8430**. Use the local `ABRL_OPERATOR_TOKEN` from `.env`; never paste it into a workflow. The API binds to **http://127.0.0.1:8400**. Configuration generates local credentials and encryption keys with owner-only permissions. Keep recovery copies of profile encryption keys: losing a key makes its snapshots unrecoverable.
 
-1. Select **Load starter suite** to add the controlled test site and example workflows.
-2. Select **New run**, choose the site and **Sample form**, and set the trial count to one. Live mode uses actual Chromium. Demo mode uses repeatable simulated observations and makes no browser requests.
-3. Inspect the trial, download a report in JSON, CSV, HTML, or PDF, or archive the finished report summary to the local object store.
-4. When you have a representative workflow, run a pilot and then a separately configured confirmation run.
+`make dev` starts the API, dedicated scheduler, short-task worker, standard and vendor session runners, and frontend. To run them separately, use `make infra migrate`, then `make api`, `make scheduler`, `make worker`, `make sessions`, `make sessions-vendor`, and `make web`. `make down` stops data services without deleting volumes.
 
-`make down` stops the infrastructure and preserves its data volumes. Stop the development processes from their terminals.
+1. Load the starter suite, or register an owned/authorized HTTPS site and verify its ownership marker.
+2. Build a workflow with an explicit success assertion. Use `ABRL_SECRET_<NAME>` references for sensitive input.
+3. Save or load a versioned session template, then create a batch with independent profiles, browser distribution, persistence, preparation, proxy policy, concurrency, and evidence mode. Automated preparation defaults off; it remains automated activity.
+4. Save an experiment to pin multiple workflow groups, validate readiness, then execute. Draft revisions and execution history remain separate. Pilot defaults are 30 trials per candidate; confirmation is a separately declared run.
+5. Create one-time, interval, or calendar schedules with an IANA timezone. Jerusalem is the default. Review occurrence history, overlaps and missed-execution policies.
+6. Inspect sessions, attempts, observations, encrypted artifacts and comparisons. Export immutable JSON/CSV/HTML/PDF reports.
 
-## Use another site
+## Browser and network configuration
 
-Register a site you own or are explicitly authorized to test. For an external origin, publish the one-time ownership marker shown in the registry at the exact HTTPS path and select **Verify**. An edit requires re-verification. The origin must resolve to public IPv4 and use HTTPS on port 443. Secondary origins are for read-only resources; they cannot be navigation destinations.
+Stock Playwright runs without vendor credentials. Manual Chrome requires installed Chrome and a person controlling it. CloakBrowser and Kameleo use their documented SDKs, explicit license/runtime readiness and actual recorded versions. See [browser and proxy contracts](docs/browser-proxy.md).
 
-Author the steps in the dashboard or import a workflow JSON document. Start with a relative navigation path and end with an explicit success assertion. A trial uses a fresh browser context; steps within that trial share its cookies. Use `ABRL_SECRET_<NAME>` in the worker environment for sensitive fill values and reference the name in the workflow. Use test accounts and fixtures for workflows that submit data.
+Oxylabs inventory stores named credential references, product, geography, capacity and continuity limits. Policies explain selection using eligibility, measured transport health, utilization and known cost. Detector verdicts never influence proxy health or preparation. Authentication/quota failures pause inventory. Transport recovery is bounded; site denial does not trigger rotation. Uncertain submitted actions require reconciliation.
 
-Remote pages run through scoped browser request checks and a connection guard that resolves and pins public destination addresses. The worker closes the run on recognized access challenges or denial. It does not follow popups or WebSockets. Browser and proxy controls do not replace host-level sandboxing for untrusted targets.
+External navigation is restricted to the primary origin and separately ownership-verified navigation origins. Resource origins are separately allowed. Direct connections pin validated public addresses. Oxylabs hostname resolution remains an explicit upstream trust boundary. Cloud browsers and brokers run in separate pods with session-specific network policies.
 
-## Read the evidence
+## Instrumented research
 
-- Completion includes real workflow failures and operational failures in the denominator. Canceled and pending work is reported separately.
-- The report shows first-attempt reliability, completion after eligible infrastructure retries, latency, and a 95% Wilson interval. A completed confirmation run qualifies only when the lower confidence bound meets its configured target. Repeat-visit intervals are descriptive.
-- Pilot, incomplete, and simulated runs do not qualify a workflow. Reports contain the source, run configuration hash, and traceable trial identifiers.
-- Automated runs do not receive AdScore verdicts. A separate manual diagnostic records verification state, vendor code, and verdict without attaching them to automated runs. A verified Clean verdict is a provider classification.
+Browser-only targets report observable completion and unavailable AdScore evidence. Instrumented targets correlate signed context with a session and attempt, obtain trusted request IP/User-Agent, and use the internal official Node SDK verifier. Code `0` means **Clean**, not human. The default controlled-action gate requires a verified Clean result. Workflow outcomes, verification, raw codes, acceptance, ground truth and provenance remain separate.
 
-The [verifier setup guide](apps/verifier/README.md) describes the optional live diagnostic. It requires a compatible zone, credentials, a dedicated authorized HTTPS origin, and trusted IP/User-Agent metadata. Live vendor verification is not part of CI.
+Follow the [verifier guide](apps/verifier/README.md) and [integration contract](docs/instrumented-research.md). A compatible zone, public authorized HTTPS integration and successful live smoke test are required before readiness. Local networking never disables IP or User-Agent checks.
 
-## Development and operations
+Reports include operational failures, first-attempt reliability, recovery, verification coverage, raw verdict distributions, Wilson intervals, cluster-aware analysis, corrected pairwise comparisons and unknown costs. A completed live confirmation qualifies only when its uncertainty bound meets the selected threshold. Ties and insufficient evidence are explicit.
+
+## Team and cloud deployment
+
+Cloud deployments require OIDC and project memberships with owner/operator/analyst/viewer roles. Local bootstrap authentication is disabled in cloud mode. Viewers cannot issue lifecycle commands; manual control has one authenticated operator and explicit handoff.
+
+The [deployment guide](docs/deployment.md) covers Terraform, HA K3s, CloudNativePG, Sentinel, ClickHouse/Keeper, KEDA, Hetzner Cluster Autoscaler, encrypted backups and telemetry. [Recovery procedures](docs/recovery.md) cover failover and restore. Maximum admission is 500 sessions and Terraform limits elastic pools to 80 aggregate browser nodes. Monetary cost is visible when inputs exist; no monetary cap is assumed.
+
+Hetzner credentials/quotas, DNS, OIDC, object storage/recovery keys, Oxylabs and vendor licenses are external prerequisites. Capacity, failover, recovery objectives and live licensed integrations require actual deployment evidence.
+
+## Validate
 
 ```sh
 make test
 make lint typecheck
 make build
-make integration-test    # With the loopback API, worker, and Compose stack running
+make integration-test                 # API, scheduler, workers and Compose running
+make migration-test                   # fresh temporary PostgreSQL database
+make profile-test                     # real Chromium save/restore on owned local fixture
+pnpm --dir apps/web generate:api      # regenerate contracts after API changes
+PYTHONPATH=. uv run python apps/web/scripts/platform_smoke.py
 ```
 
-FastAPI exposes OpenAPI at `/openapi.json`; run `pnpm --dir apps/web generate:api` against the local API after changing its contract. See [Architecture and operations](docs/architecture.md) for queue recovery, diagnostics, monitoring, and current limits.
+See [architecture](docs/architecture.md) for persistence, fencing, event delivery and operational limits. All source changes are additive; historical browser-only observations are not assigned invented session identities or verdicts.

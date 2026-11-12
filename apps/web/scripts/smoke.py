@@ -35,19 +35,21 @@ def smoke():
         capture(page, "overview")
 
         page.get_by_role("button", name="Sites", exact=True).click()
+        page.get_by_label("Search sites", exact=True).fill("ABRL controlled test site")
         page.get_by_role("button", name="ABRL controlled test site").click()
-        assert page.get_by_label("Navigation origin").input_value().endswith(":8400")
+        assert page.get_by_label("Navigation origin", exact=True).input_value().endswith(":8400")
         page.get_by_role("button", name="Workflows", exact=True).click()
+        page.get_by_label("Search workflows", exact=True).fill("Sample form")
         page.get_by_role("button", name="Sample form").click()
         assert page.get_by_label("Workflow name").input_value() == "Sample form"
         assert page.get_by_label("Step 5 action").input_value() == "assert_text"
 
-        page.get_by_role("button", name="New run", exact=True).click()
+        page.get_by_role("button", name="Workflow preview", exact=True).click()
         modal = page.get_by_role("dialog")
+        modal.get_by_label("Site", exact=True).select_option(label="ABRL controlled test site")
         modal.get_by_label("Workflow").select_option(label="Sample form")
         modal.get_by_label("Evidence source").select_option("live")
-        modal.get_by_label("Trials", exact=True).fill("1")
-        modal.get_by_role("button", name="Start run", exact=True).click()
+        modal.get_by_role("button", name="Run preview", exact=True).click()
         page.get_by_role("heading", name="Sample form", exact=True).wait_for()
         page.get_by_text("1 of 1 attempted", exact=True).first.wait_for(timeout=30_000)
         page.get_by_role("heading", name="Recent run events", exact=True).wait_for(timeout=20_000)

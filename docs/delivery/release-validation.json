@@ -1,0 +1,99 @@
+{
+  "recorded_at": "2026-11-12T19:56:35.546939+00:00",
+  "scope": "Local implementation validation; no live Hetzner, Oxylabs, licensed adapter or AdScore acceptance claimed",
+  "backend_commit": "11ad011",
+  "checks": [
+    {
+      "command": "uv run python -m pytest -q --disable-warnings",
+      "result": "passed",
+      "passed": 247,
+      "warnings": 2,
+      "duration_seconds": 64.28
+    },
+    {
+      "command": "python -m pytest -q -m 'not integration' --disable-warnings",
+      "result": "passed",
+      "passed": 215,
+      "deselected": 32,
+      "warnings": 2,
+      "duration_seconds": 13.97,
+      "environment": "Detached clean worktree of 11ad011, no .env; reused locked Python dependency environment; imported source verified from worktree"
+    },
+    {
+      "command": "npm --prefix apps/verifier test",
+      "result": "passed",
+      "passed": 3
+    },
+    {
+      "command": "make migration-test",
+      "result": "passed",
+      "details": "Fresh temporary PostgreSQL database, Alembic upgrade head and metadata comparison; temporary database removed"
+    },
+    {
+      "command": "make profile-test",
+      "result": "passed",
+      "details": "Four real Chromium sessions: two independent persistent profiles, clean save, restore and second immutable generation; automated preparation recorded"
+    },
+    {
+      "command": "uv run ruff check abrl tests migrations scripts",
+      "result": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "pnpm --dir apps/web generate:api; lint; typecheck; build",
+      "result": "passed",
+      "details": "Final frontend source and regenerated OpenAPI contracts"
+    },
+    {
+      "command": "apps/web/scripts/smoke.py",
+      "result": "passed",
+      "details": "Actual local Chromium workflow preview"
+    },
+    {
+      "command": "apps/web/scripts/platform_smoke.py",
+      "result": "passed",
+      "details": "Real session/profile/batch/policy/schedule/artifact flows; isolated 500-row and viewer fixtures; mobile routes"
+    },
+    {
+      "command": "apps/web/scripts/experiments_smoke.py",
+      "result": "passed",
+      "details": "Two-workflow matched conditions, run-wide concurrency, entire-run export with both batch IDs and mobile layout"
+    },
+    {
+      "command": "apps/web/scripts/release_smoke.py",
+      "result": "passed",
+      "details": "Quota persistence, manual lifetime, target rate and research reliability controls"
+    },
+    {
+      "command": "apps/web/scripts/templates_smoke.py",
+      "result": "passed",
+      "details": "Template v1/v2, explicit detach, pinned launch/schedule, budgets, proxy connection/currency, server filtering/pagination/order, calendar keyboard/time/navigation and cost coverage"
+    },
+    {
+      "command": "Visual review of rendered UI and report screenshots",
+      "result": "passed",
+      "details": "Desktop/mobile templates, calendar, long-origin controls and fleet costs; every page of two-page batch and four-page experiment PDFs"
+    }
+  ],
+  "artifacts": {
+    "browser_evidence": "local-browser-evidence.json",
+    "requirements": "requirements.md",
+    "infrastructure": "../../deployment/validation.local.json",
+    "batch_report": "research-report.pdf",
+    "experiment_report": "experiment-run.pdf"
+  },
+  "external_acceptance_pending": [
+    "Configured team OIDC login and cloud domain/TLS",
+    "Real Oxylabs products, connection failures, quota/affinity and provider billing reconciliation",
+    "Licensed CloakBrowser and Kameleo live execution",
+    "Genuine human participant control/handoff research",
+    "Compatible AdScore zone and successful live signature verification smoke",
+    "Fresh Hetzner deployment, deployed egress probes and worker autoscaling/draining",
+    "Node loss, network partition, synchronous database failover and measured two-minute recovery",
+    "Cross-location restoration into a new environment; measured RPO<=15 minutes and RTO<=4 hours",
+    "100/250/500 actual concurrent browser capacity and licensed adapter capacity"
+  ]
+}

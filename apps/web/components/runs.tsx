@@ -58,10 +58,11 @@ export function NewRun({ token, targets, workflows, preview, close, onRun }: {
   return <dialog ref={dialog} className="dialog" aria-labelledby="run-dialog-title" onCancel={(event) => { event.preventDefault(); if (!create.isPending) close(); }}>
     <form className="edit-form" onSubmit={submit}>
       <div className="dialog-title">
-        <div><h2 id="run-dialog-title">{preview ? "Preview workflow" : "Start a run"}</h2><p>{preview ? "Execute one trial against the selected site." : "Choose the site, workflow, and sample size."}</p></div>
+        <div><h2 id="run-dialog-title">{preview ? "Preview workflow" : "Browser-only run"}</h2><p>{preview ? "Execute one trial against the selected site." : "Choose the site, workflow, and sample size."}</p></div>
         <button type="button" className="icon-button bare" aria-label="Close" onClick={close} disabled={create.isPending}><X size={20} /></button>
       </div>
       {(!targets.length || !workflows.length) && <div className="notice">Register a site and save a workflow, or load the starter suite from Overview.</div>}
+      <div className="notice">This preview measures observable workflow completion. Use session batches or research experiments for server-verified AdScore evidence.</div>
       <div className="form-grid">
         <Field label="Site"><Select required value={form.target_id} onChange={(event) => set("target_id", event.target.value)}>
           {!targets.length && <option value="">No sites registered</option>}{targets.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
@@ -114,7 +115,7 @@ export function RunHistory({ runs, onOpen, onCreate }: { runs: Run[]; onOpen: (i
       <Select aria-label="Evidence source" value={mode} onChange={(event) => setMode(event.target.value)}><option value="all">All sources</option><option value="live">Live browser</option><option value="demo">Simulated</option></Select>
       <Select aria-label="Run status" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option>{statuses.map((entry) => <option key={entry} value={entry}>{label(entry)}</option>)}</Select>
     </div>
-    {filtered.length ? <RunRows runs={filtered} onOpen={onOpen} /> : <Empty title={runs.length ? "No matching runs" : "No runs yet"} detail={runs.length ? "Change the filters to see other results." : "Start a run to capture trial outcomes and latency."} action={!runs.length && <button className="button primary" onClick={onCreate}><Play size={15} /> New run</button>} />}
+    {filtered.length ? <RunRows runs={filtered} onOpen={onOpen} /> : <Empty title={runs.length ? "No matching runs" : "No runs yet"} detail={runs.length ? "Change the filters to see other results." : "Start a run to capture trial outcomes and latency."} action={!runs.length && <button className="button primary" onClick={onCreate}><Play size={15} /> Workflow preview</button>} />}
   </section>;
 }
 

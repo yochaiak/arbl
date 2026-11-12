@@ -1,0 +1,1776 @@
+{
+  "batch_id": "batch",
+  "mode": "demo",
+  "evidence_mode": "instrumented",
+  "status": "completed",
+  "phase": "confirmation",
+  "reliability_target": 0.95,
+  "groups": [
+    {
+      "id": "6c703e7929128930",
+      "adapter": "cloakbrowser",
+      "environment": {
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "dns_mode": "direct_pinned",
+        "engine_version": null,
+        "os": "Linux",
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "wrapper_version": "1.62"
+      },
+      "simulated": true,
+      "n": 5,
+      "successes": 2,
+      "rate": 0.4,
+      "low": 0.11762077423264783,
+      "high": 0.769275718723987,
+      "interval": {
+        "successes": 2,
+        "total": 5,
+        "rate": 0.4,
+        "low": 0.11762077423264783,
+        "high": 0.769275718723987,
+        "method": "wilson",
+        "clusters": 5,
+        "eligible": true
+      },
+      "eligible": false,
+      "p50_ms": 150.0,
+      "p95_ms": 150,
+      "completed": 4,
+      "completion_rate": 0.8,
+      "verified": 4,
+      "verification_coverage": 0.8,
+      "clean": 3,
+      "verified_clean_rate": 0.75,
+      "verdicts": {
+        "0": 3,
+        "9": 1
+      },
+      "verified_observations": 4,
+      "verification_states": {
+        "verified": 4,
+        "failed": 1
+      },
+      "first_attempt": {
+        "successes": 2,
+        "total": 5,
+        "rate": 0.4,
+        "low": 0.11762077423264783,
+        "high": 0.769275718723987,
+        "method": "wilson",
+        "clusters": 5,
+        "eligible": true
+      },
+      "recovered": 0,
+      "cost_total": null,
+      "cost_per_success": null,
+      "cost_currency": null,
+      "cost_basis": [
+        "unknown"
+      ],
+      "outcomes": {
+        "completed": 4,
+        "failed": 1
+      }
+    },
+    {
+      "id": "dffca855572109b3",
+      "adapter": "playwright",
+      "environment": {
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "dns_mode": "direct_pinned",
+        "engine_version": null,
+        "os": "Linux",
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "wrapper_version": "1.62"
+      },
+      "simulated": true,
+      "n": 5,
+      "successes": 2,
+      "rate": 0.4,
+      "low": 0.11762077423264783,
+      "high": 0.769275718723987,
+      "interval": {
+        "successes": 2,
+        "total": 5,
+        "rate": 0.4,
+        "low": 0.11762077423264783,
+        "high": 0.769275718723987,
+        "method": "wilson",
+        "clusters": 5,
+        "eligible": true
+      },
+      "eligible": false,
+      "p50_ms": 150.0,
+      "p95_ms": 150,
+      "completed": 4,
+      "completion_rate": 0.8,
+      "verified": 4,
+      "verification_coverage": 0.8,
+      "clean": 3,
+      "verified_clean_rate": 0.75,
+      "verdicts": {
+        "0": 3,
+        "9": 1
+      },
+      "verified_observations": 4,
+      "verification_states": {
+        "verified": 4,
+        "failed": 1
+      },
+      "first_attempt": {
+        "successes": 2,
+        "total": 5,
+        "rate": 0.4,
+        "low": 0.11762077423264783,
+        "high": 0.769275718723987,
+        "method": "wilson",
+        "clusters": 5,
+        "eligible": true
+      },
+      "recovered": 0,
+      "cost_total": null,
+      "cost_per_success": null,
+      "cost_currency": null,
+      "cost_basis": [
+        "unknown"
+      ],
+      "outcomes": {
+        "completed": 4,
+        "failed": 1
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "a": "6c703e7929128930",
+      "b": "dffca855572109b3",
+      "difference": 0.0,
+      "p_value": 1.0,
+      "adjusted_p_value": 1.0,
+      "significant": false,
+      "method": "fisher_exact"
+    }
+  ],
+  "recommendation": {
+    "status": "simulated",
+    "message": "Simulated observations cannot produce a final live recommendation.",
+    "candidates": []
+  },
+  "limitations": [
+    "Missing cost inputs remain unknown and cannot support a cost advantage claim.",
+    "All planned logical sessions, including infrastructure failures and cancellations, stay in operational denominators; retries never add samples."
+  ],
+  "snapshot": {
+    "batch_id": "batch",
+    "config": {
+      "target": {
+        "mode": "instrumented",
+        "name": "Owned fixture",
+        "origin": "https://owned.example"
+      },
+      "workflow": {
+        "name": "Submit fixture",
+        "steps": [
+          {
+            "action": "navigate",
+            "url": "/"
+          }
+        ]
+      },
+      "target_id": "target",
+      "target_version": 1,
+      "workflow_id": "workflow",
+      "workflow_version": 3,
+      "mode": "demo",
+      "phase": "confirmation",
+      "seed": 13,
+      "reliability_target": 0.95,
+      "preparation": {
+        "mode": "none"
+      }
+    },
+    "planned": 10,
+    "status": "completed",
+    "created_at": "2026-11-12T14:23:04.961435+00:00",
+    "finished_at": null,
+    "trials": [
+      {
+        "id": "session-0001",
+        "ordinal": 1,
+        "adapter": "playwright",
+        "profile_id": "profile-0001",
+        "cluster_id": "profile:profile-0001",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "completed",
+        "outcome": "completed",
+        "complete": true,
+        "success": true,
+        "workflow_completed": true,
+        "first_attempt_success": true,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": true,
+        "clean": true,
+        "conflicting": false,
+        "verification_status": "verified",
+        "raw_codes": [
+          0
+        ],
+        "observations": [
+          {
+            "id": "session-0001-observation",
+            "attempt_id": "session-0001-a1",
+            "verification_status": "verified",
+            "raw_code": 0,
+            "verdict": "Clean",
+            "accepted": true,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.966727+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0001-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "completed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.966382+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      },
+      {
+        "id": "session-0002",
+        "ordinal": 2,
+        "adapter": "playwright",
+        "profile_id": "profile-0002",
+        "cluster_id": "profile:profile-0002",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "completed",
+        "outcome": "completed",
+        "complete": true,
+        "success": true,
+        "workflow_completed": true,
+        "first_attempt_success": true,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": true,
+        "clean": true,
+        "conflicting": false,
+        "verification_status": "verified",
+        "raw_codes": [
+          0
+        ],
+        "observations": [
+          {
+            "id": "session-0002-observation",
+            "attempt_id": "session-0002-a1",
+            "verification_status": "verified",
+            "raw_code": 0,
+            "verdict": "Clean",
+            "accepted": true,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.967404+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0002-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "completed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.967324+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      },
+      {
+        "id": "session-0003",
+        "ordinal": 3,
+        "adapter": "playwright",
+        "profile_id": "profile-0003",
+        "cluster_id": "profile:profile-0003",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "completed",
+        "outcome": "completed",
+        "complete": true,
+        "success": false,
+        "workflow_completed": true,
+        "first_attempt_success": false,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": true,
+        "clean": false,
+        "conflicting": false,
+        "verification_status": "verified",
+        "raw_codes": [
+          9
+        ],
+        "observations": [
+          {
+            "id": "session-0003-observation",
+            "attempt_id": "session-0003-a1",
+            "verification_status": "verified",
+            "raw_code": 9,
+            "verdict": "Unknown",
+            "accepted": false,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.967894+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0003-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "completed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.967823+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      },
+      {
+        "id": "session-0004",
+        "ordinal": 4,
+        "adapter": "playwright",
+        "profile_id": "profile-0004",
+        "cluster_id": "profile:profile-0004",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "completed",
+        "outcome": "completed",
+        "complete": true,
+        "success": false,
+        "workflow_completed": true,
+        "first_attempt_success": false,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": false,
+        "clean": false,
+        "conflicting": false,
+        "verification_status": "failed",
+        "raw_codes": [],
+        "observations": [
+          {
+            "id": "session-0004-observation",
+            "attempt_id": "session-0004-a1",
+            "verification_status": "failed",
+            "raw_code": 0,
+            "verdict": "Clean",
+            "accepted": false,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.968307+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0004-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "completed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.968240+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      },
+      {
+        "id": "session-0005",
+        "ordinal": 5,
+        "adapter": "playwright",
+        "profile_id": "profile-0005",
+        "cluster_id": "profile:profile-0005",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "failed",
+        "outcome": "failed",
+        "complete": true,
+        "success": false,
+        "workflow_completed": false,
+        "first_attempt_success": false,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": true,
+        "clean": true,
+        "conflicting": false,
+        "verification_status": "verified",
+        "raw_codes": [
+          0
+        ],
+        "observations": [
+          {
+            "id": "session-0005-observation",
+            "attempt_id": "session-0005-a1",
+            "verification_status": "verified",
+            "raw_code": 0,
+            "verdict": "Clean",
+            "accepted": true,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.968714+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0005-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "failed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.968646+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      },
+      {
+        "id": "session-0006",
+        "ordinal": 6,
+        "adapter": "cloakbrowser",
+        "profile_id": "profile-0006",
+        "cluster_id": "profile:profile-0006",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "completed",
+        "outcome": "completed",
+        "complete": true,
+        "success": true,
+        "workflow_completed": true,
+        "first_attempt_success": true,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": true,
+        "clean": true,
+        "conflicting": false,
+        "verification_status": "verified",
+        "raw_codes": [
+          0
+        ],
+        "observations": [
+          {
+            "id": "session-0006-observation",
+            "attempt_id": "session-0006-a1",
+            "verification_status": "verified",
+            "raw_code": 0,
+            "verdict": "Clean",
+            "accepted": true,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.969112+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0006-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "completed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.969044+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      },
+      {
+        "id": "session-0007",
+        "ordinal": 7,
+        "adapter": "cloakbrowser",
+        "profile_id": "profile-0007",
+        "cluster_id": "profile:profile-0007",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "completed",
+        "outcome": "completed",
+        "complete": true,
+        "success": true,
+        "workflow_completed": true,
+        "first_attempt_success": true,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": true,
+        "clean": true,
+        "conflicting": false,
+        "verification_status": "verified",
+        "raw_codes": [
+          0
+        ],
+        "observations": [
+          {
+            "id": "session-0007-observation",
+            "attempt_id": "session-0007-a1",
+            "verification_status": "verified",
+            "raw_code": 0,
+            "verdict": "Clean",
+            "accepted": true,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.969836+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0007-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "completed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.969484+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      },
+      {
+        "id": "session-0008",
+        "ordinal": 8,
+        "adapter": "cloakbrowser",
+        "profile_id": "profile-0008",
+        "cluster_id": "profile:profile-0008",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "completed",
+        "outcome": "completed",
+        "complete": true,
+        "success": false,
+        "workflow_completed": true,
+        "first_attempt_success": false,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": true,
+        "clean": false,
+        "conflicting": false,
+        "verification_status": "verified",
+        "raw_codes": [
+          9
+        ],
+        "observations": [
+          {
+            "id": "session-0008-observation",
+            "attempt_id": "session-0008-a1",
+            "verification_status": "verified",
+            "raw_code": 9,
+            "verdict": "Unknown",
+            "accepted": false,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.970664+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0008-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "completed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.970412+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      },
+      {
+        "id": "session-0009",
+        "ordinal": 9,
+        "adapter": "cloakbrowser",
+        "profile_id": "profile-0009",
+        "cluster_id": "profile:profile-0009",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "completed",
+        "outcome": "completed",
+        "complete": true,
+        "success": false,
+        "workflow_completed": true,
+        "first_attempt_success": false,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": false,
+        "clean": false,
+        "conflicting": false,
+        "verification_status": "failed",
+        "raw_codes": [],
+        "observations": [
+          {
+            "id": "session-0009-observation",
+            "attempt_id": "session-0009-a1",
+            "verification_status": "failed",
+            "raw_code": 0,
+            "verdict": "Clean",
+            "accepted": false,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.971433+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0009-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "completed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.971299+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      },
+      {
+        "id": "session-0010",
+        "ordinal": 10,
+        "adapter": "cloakbrowser",
+        "profile_id": "profile-0010",
+        "cluster_id": "profile:profile-0010",
+        "participant_recorded": false,
+        "ground_truth": "automated",
+        "mode": "demo",
+        "simulated": true,
+        "status": "failed",
+        "outcome": "failed",
+        "complete": true,
+        "success": false,
+        "workflow_completed": false,
+        "first_attempt_success": false,
+        "recovered": false,
+        "elapsed_ms": 150,
+        "environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        },
+        "environment_epoch": 1,
+        "cost": null,
+        "cost_basis": "unknown",
+        "error": null,
+        "verified": true,
+        "clean": true,
+        "conflicting": false,
+        "verification_status": "verified",
+        "raw_codes": [
+          0
+        ],
+        "observations": [
+          {
+            "id": "session-0010-observation",
+            "attempt_id": "session-0010-a1",
+            "verification_status": "verified",
+            "raw_code": 0,
+            "verdict": "Clean",
+            "accepted": true,
+            "source": "controlled_site",
+            "provider_version": "5",
+            "created_at": "2026-11-12T14:23:04.972126+00:00"
+          }
+        ],
+        "attempts": [
+          {
+            "id": "session-0010-a1",
+            "number": 1,
+            "epoch": 1,
+            "outcome": "failed",
+            "started_action": true,
+            "started_at": "2026-11-12T14:23:04.972046+00:00",
+            "finished_at": "2026-11-12T12:00:00+00:00"
+          }
+        ],
+        "group_environment": {
+          "os": "Linux",
+          "architecture": "x86_64",
+          "browser_version": "Chrome/149.1",
+          "wrapper_version": "1.62",
+          "engine_version": null,
+          "persistence": "persistent",
+          "preparation": "none",
+          "proxy_product": "direct",
+          "proxy_region": null,
+          "dns_mode": "direct_pinned"
+        }
+      }
+    ]
+  },
+  "trials": [
+    {
+      "id": "session-0001",
+      "ordinal": 1,
+      "adapter": "playwright",
+      "profile_id": "profile-0001",
+      "cluster_id": "profile:profile-0001",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "completed",
+      "outcome": "completed",
+      "complete": true,
+      "success": true,
+      "workflow_completed": true,
+      "first_attempt_success": true,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": true,
+      "clean": true,
+      "conflicting": false,
+      "verification_status": "verified",
+      "raw_codes": [
+        0
+      ],
+      "observations": [
+        {
+          "id": "session-0001-observation",
+          "attempt_id": "session-0001-a1",
+          "verification_status": "verified",
+          "raw_code": 0,
+          "verdict": "Clean",
+          "accepted": true,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.966727+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0001-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "completed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.966382+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    },
+    {
+      "id": "session-0002",
+      "ordinal": 2,
+      "adapter": "playwright",
+      "profile_id": "profile-0002",
+      "cluster_id": "profile:profile-0002",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "completed",
+      "outcome": "completed",
+      "complete": true,
+      "success": true,
+      "workflow_completed": true,
+      "first_attempt_success": true,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": true,
+      "clean": true,
+      "conflicting": false,
+      "verification_status": "verified",
+      "raw_codes": [
+        0
+      ],
+      "observations": [
+        {
+          "id": "session-0002-observation",
+          "attempt_id": "session-0002-a1",
+          "verification_status": "verified",
+          "raw_code": 0,
+          "verdict": "Clean",
+          "accepted": true,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.967404+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0002-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "completed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.967324+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    },
+    {
+      "id": "session-0003",
+      "ordinal": 3,
+      "adapter": "playwright",
+      "profile_id": "profile-0003",
+      "cluster_id": "profile:profile-0003",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "completed",
+      "outcome": "completed",
+      "complete": true,
+      "success": false,
+      "workflow_completed": true,
+      "first_attempt_success": false,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": true,
+      "clean": false,
+      "conflicting": false,
+      "verification_status": "verified",
+      "raw_codes": [
+        9
+      ],
+      "observations": [
+        {
+          "id": "session-0003-observation",
+          "attempt_id": "session-0003-a1",
+          "verification_status": "verified",
+          "raw_code": 9,
+          "verdict": "Unknown",
+          "accepted": false,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.967894+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0003-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "completed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.967823+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    },
+    {
+      "id": "session-0004",
+      "ordinal": 4,
+      "adapter": "playwright",
+      "profile_id": "profile-0004",
+      "cluster_id": "profile:profile-0004",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "completed",
+      "outcome": "completed",
+      "complete": true,
+      "success": false,
+      "workflow_completed": true,
+      "first_attempt_success": false,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": false,
+      "clean": false,
+      "conflicting": false,
+      "verification_status": "failed",
+      "raw_codes": [],
+      "observations": [
+        {
+          "id": "session-0004-observation",
+          "attempt_id": "session-0004-a1",
+          "verification_status": "failed",
+          "raw_code": 0,
+          "verdict": "Clean",
+          "accepted": false,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.968307+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0004-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "completed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.968240+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    },
+    {
+      "id": "session-0005",
+      "ordinal": 5,
+      "adapter": "playwright",
+      "profile_id": "profile-0005",
+      "cluster_id": "profile:profile-0005",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "failed",
+      "outcome": "failed",
+      "complete": true,
+      "success": false,
+      "workflow_completed": false,
+      "first_attempt_success": false,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": true,
+      "clean": true,
+      "conflicting": false,
+      "verification_status": "verified",
+      "raw_codes": [
+        0
+      ],
+      "observations": [
+        {
+          "id": "session-0005-observation",
+          "attempt_id": "session-0005-a1",
+          "verification_status": "verified",
+          "raw_code": 0,
+          "verdict": "Clean",
+          "accepted": true,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.968714+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0005-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "failed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.968646+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    },
+    {
+      "id": "session-0006",
+      "ordinal": 6,
+      "adapter": "cloakbrowser",
+      "profile_id": "profile-0006",
+      "cluster_id": "profile:profile-0006",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "completed",
+      "outcome": "completed",
+      "complete": true,
+      "success": true,
+      "workflow_completed": true,
+      "first_attempt_success": true,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": true,
+      "clean": true,
+      "conflicting": false,
+      "verification_status": "verified",
+      "raw_codes": [
+        0
+      ],
+      "observations": [
+        {
+          "id": "session-0006-observation",
+          "attempt_id": "session-0006-a1",
+          "verification_status": "verified",
+          "raw_code": 0,
+          "verdict": "Clean",
+          "accepted": true,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.969112+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0006-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "completed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.969044+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    },
+    {
+      "id": "session-0007",
+      "ordinal": 7,
+      "adapter": "cloakbrowser",
+      "profile_id": "profile-0007",
+      "cluster_id": "profile:profile-0007",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "completed",
+      "outcome": "completed",
+      "complete": true,
+      "success": true,
+      "workflow_completed": true,
+      "first_attempt_success": true,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": true,
+      "clean": true,
+      "conflicting": false,
+      "verification_status": "verified",
+      "raw_codes": [
+        0
+      ],
+      "observations": [
+        {
+          "id": "session-0007-observation",
+          "attempt_id": "session-0007-a1",
+          "verification_status": "verified",
+          "raw_code": 0,
+          "verdict": "Clean",
+          "accepted": true,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.969836+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0007-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "completed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.969484+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    },
+    {
+      "id": "session-0008",
+      "ordinal": 8,
+      "adapter": "cloakbrowser",
+      "profile_id": "profile-0008",
+      "cluster_id": "profile:profile-0008",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "completed",
+      "outcome": "completed",
+      "complete": true,
+      "success": false,
+      "workflow_completed": true,
+      "first_attempt_success": false,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": true,
+      "clean": false,
+      "conflicting": false,
+      "verification_status": "verified",
+      "raw_codes": [
+        9
+      ],
+      "observations": [
+        {
+          "id": "session-0008-observation",
+          "attempt_id": "session-0008-a1",
+          "verification_status": "verified",
+          "raw_code": 9,
+          "verdict": "Unknown",
+          "accepted": false,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.970664+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0008-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "completed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.970412+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    },
+    {
+      "id": "session-0009",
+      "ordinal": 9,
+      "adapter": "cloakbrowser",
+      "profile_id": "profile-0009",
+      "cluster_id": "profile:profile-0009",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "completed",
+      "outcome": "completed",
+      "complete": true,
+      "success": false,
+      "workflow_completed": true,
+      "first_attempt_success": false,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": false,
+      "clean": false,
+      "conflicting": false,
+      "verification_status": "failed",
+      "raw_codes": [],
+      "observations": [
+        {
+          "id": "session-0009-observation",
+          "attempt_id": "session-0009-a1",
+          "verification_status": "failed",
+          "raw_code": 0,
+          "verdict": "Clean",
+          "accepted": false,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.971433+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0009-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "completed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.971299+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    },
+    {
+      "id": "session-0010",
+      "ordinal": 10,
+      "adapter": "cloakbrowser",
+      "profile_id": "profile-0010",
+      "cluster_id": "profile:profile-0010",
+      "participant_recorded": false,
+      "ground_truth": "automated",
+      "mode": "demo",
+      "simulated": true,
+      "status": "failed",
+      "outcome": "failed",
+      "complete": true,
+      "success": false,
+      "workflow_completed": false,
+      "first_attempt_success": false,
+      "recovered": false,
+      "elapsed_ms": 150,
+      "environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      },
+      "environment_epoch": 1,
+      "cost": null,
+      "cost_basis": "unknown",
+      "error": null,
+      "verified": true,
+      "clean": true,
+      "conflicting": false,
+      "verification_status": "verified",
+      "raw_codes": [
+        0
+      ],
+      "observations": [
+        {
+          "id": "session-0010-observation",
+          "attempt_id": "session-0010-a1",
+          "verification_status": "verified",
+          "raw_code": 0,
+          "verdict": "Clean",
+          "accepted": true,
+          "source": "controlled_site",
+          "provider_version": "5",
+          "created_at": "2026-11-12T14:23:04.972126+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": "session-0010-a1",
+          "number": 1,
+          "epoch": 1,
+          "outcome": "failed",
+          "started_action": true,
+          "started_at": "2026-11-12T14:23:04.972046+00:00",
+          "finished_at": "2026-11-12T12:00:00+00:00"
+        }
+      ],
+      "group_environment": {
+        "os": "Linux",
+        "architecture": "x86_64",
+        "browser_version": "Chrome/149.1",
+        "wrapper_version": "1.62",
+        "engine_version": null,
+        "persistence": "persistent",
+        "preparation": "none",
+        "proxy_product": "direct",
+        "proxy_region": null,
+        "dns_mode": "direct_pinned"
+      }
+    }
+  ],
+  "snapshot_sha256": "6d03a95dfc136fc660e80a47a54b0d4e1690656e93a32208eab74f9cd05ed6b4",
+  "config_sha256": "1c82525e5b3fbcd37557b2e86494067f5241576975e599fc5820093195785ba1",
+  "methodology": {
+    "independent_interval": "95% Wilson",
+    "cluster_interval": "Whole-cluster percentile bootstrap with effective-cluster Wilson boundary envelope",
+    "pairwise": "Two-sided Fisher exact or cluster permutation; Holm correction across reported tests",
+    "primary_outcome": "completed workflow and verified Clean",
+    "seed": 13,
+    "execution_order": "seeded randomized adapter assignment",
+    "first_attempt_separate": true,
+    "sample_unit": "logical session",
+    "reproduction": "Create a separate batch using the pinned target/workflow versions, adapter distribution, seed and proxy policy; restore compatible profile generations and record new trial identities. Never overwrite this snapshot."
+  },
+  "analysis_sha256": "331fc821370f42a14f38e9bedceafacedf433830f7b4c4dfee16604858945941"
+}
