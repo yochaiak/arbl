@@ -160,6 +160,7 @@
             },
             "measured_proxy_bytes": 10000000,
             "measured_attempts": 4,
+            "missing_usage_attempt_count": 0,
             "sessions_with_complete_proxy_estimate": 4,
             "sessions_with_total_cost": 0,
             "billing_status": "estimates_not_provider_invoices"
@@ -300,6 +301,7 @@
             },
             "measured_proxy_bytes": 10000000,
             "measured_attempts": 4,
+            "missing_usage_attempt_count": 0,
             "sessions_with_complete_proxy_estimate": 4,
             "sessions_with_total_cost": 0,
             "billing_status": "estimates_not_provider_invoices"
@@ -439,7 +441,7 @@
         },
         "planned": 8,
         "status": "completed",
-        "created_at": "2026-11-12T19:52:51.271816+00:00",
+        "created_at": "2026-11-12T19:59:54.335667+00:00",
         "finished_at": null,
         "trials": [
           {
@@ -511,7 +513,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "form-playwright-0-a1",
+                  "attempt_id": "form-playwright-session-0001-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 1000000,
                   "browser_payload_bytes": 1000000,
@@ -527,6 +529,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 1000000,
               "measured_attempts": 1
             },
@@ -545,7 +549,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.262605+00:00",
+                "started_at": "2026-11-12T19:59:54.330823+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -640,7 +644,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "form-playwright-1-a1",
+                  "attempt_id": "form-playwright-session-0002-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 2000000,
                   "browser_payload_bytes": 2000000,
@@ -656,6 +660,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 2000000,
               "measured_attempts": 1
             },
@@ -674,7 +680,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.262950+00:00",
+                "started_at": "2026-11-12T19:59:54.331254+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -769,7 +775,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "form-playwright-2-a1",
+                  "attempt_id": "form-playwright-session-0003-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 3000000,
                   "browser_payload_bytes": 3000000,
@@ -785,6 +791,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 3000000,
               "measured_attempts": 1
             },
@@ -803,7 +811,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.264802+00:00",
+                "started_at": "2026-11-12T19:59:54.331632+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -898,7 +906,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "form-playwright-3-a1",
+                  "attempt_id": "form-playwright-session-0004-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 4000000,
                   "browser_payload_bytes": 4000000,
@@ -914,6 +922,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 4000000,
               "measured_attempts": 1
             },
@@ -932,7 +942,7 @@
                 "epoch": 1,
                 "outcome": "failed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.267960+00:00",
+                "started_at": "2026-11-12T19:59:54.332015+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -1027,7 +1037,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "form-cloakbrowser-0-a1",
+                  "attempt_id": "form-cloakbrowser-session-0001-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 1000000,
                   "browser_payload_bytes": 1000000,
@@ -1043,6 +1053,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 1000000,
               "measured_attempts": 1
             },
@@ -1061,7 +1073,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.268838+00:00",
+                "started_at": "2026-11-12T19:59:54.332821+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -1156,7 +1168,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "form-cloakbrowser-1-a1",
+                  "attempt_id": "form-cloakbrowser-session-0002-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 2000000,
                   "browser_payload_bytes": 2000000,
@@ -1172,6 +1184,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 2000000,
               "measured_attempts": 1
             },
@@ -1190,7 +1204,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.269274+00:00",
+                "started_at": "2026-11-12T19:59:54.333358+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -1285,7 +1299,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "form-cloakbrowser-2-a1",
+                  "attempt_id": "form-cloakbrowser-session-0003-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 3000000,
                   "browser_payload_bytes": 3000000,
@@ -1301,6 +1315,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 3000000,
               "measured_attempts": 1
             },
@@ -1319,7 +1335,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.269643+00:00",
+                "started_at": "2026-11-12T19:59:54.333797+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -1414,7 +1430,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "form-cloakbrowser-3-a1",
+                  "attempt_id": "form-cloakbrowser-session-0004-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 4000000,
                   "browser_payload_bytes": 4000000,
@@ -1430,6 +1446,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 4000000,
               "measured_attempts": 1
             },
@@ -1448,7 +1466,7 @@
                 "epoch": 1,
                 "outcome": "failed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.269991+00:00",
+                "started_at": "2026-11-12T19:59:54.334388+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -1546,7 +1564,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "form-playwright-0-a1",
+                "attempt_id": "form-playwright-session-0001-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 1000000,
                 "browser_payload_bytes": 1000000,
@@ -1562,6 +1580,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 1000000,
             "measured_attempts": 1
           },
@@ -1580,7 +1600,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.262605+00:00",
+              "started_at": "2026-11-12T19:59:54.330823+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -1675,7 +1695,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "form-playwright-1-a1",
+                "attempt_id": "form-playwright-session-0002-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 2000000,
                 "browser_payload_bytes": 2000000,
@@ -1691,6 +1711,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 2000000,
             "measured_attempts": 1
           },
@@ -1709,7 +1731,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.262950+00:00",
+              "started_at": "2026-11-12T19:59:54.331254+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -1804,7 +1826,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "form-playwright-2-a1",
+                "attempt_id": "form-playwright-session-0003-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 3000000,
                 "browser_payload_bytes": 3000000,
@@ -1820,6 +1842,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 3000000,
             "measured_attempts": 1
           },
@@ -1838,7 +1862,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.264802+00:00",
+              "started_at": "2026-11-12T19:59:54.331632+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -1933,7 +1957,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "form-playwright-3-a1",
+                "attempt_id": "form-playwright-session-0004-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 4000000,
                 "browser_payload_bytes": 4000000,
@@ -1949,6 +1973,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 4000000,
             "measured_attempts": 1
           },
@@ -1967,7 +1993,7 @@
               "epoch": 1,
               "outcome": "failed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.267960+00:00",
+              "started_at": "2026-11-12T19:59:54.332015+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -2062,7 +2088,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "form-cloakbrowser-0-a1",
+                "attempt_id": "form-cloakbrowser-session-0001-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 1000000,
                 "browser_payload_bytes": 1000000,
@@ -2078,6 +2104,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 1000000,
             "measured_attempts": 1
           },
@@ -2096,7 +2124,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.268838+00:00",
+              "started_at": "2026-11-12T19:59:54.332821+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -2191,7 +2219,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "form-cloakbrowser-1-a1",
+                "attempt_id": "form-cloakbrowser-session-0002-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 2000000,
                 "browser_payload_bytes": 2000000,
@@ -2207,6 +2235,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 2000000,
             "measured_attempts": 1
           },
@@ -2225,7 +2255,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.269274+00:00",
+              "started_at": "2026-11-12T19:59:54.333358+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -2320,7 +2350,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "form-cloakbrowser-2-a1",
+                "attempt_id": "form-cloakbrowser-session-0003-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 3000000,
                 "browser_payload_bytes": 3000000,
@@ -2336,6 +2366,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 3000000,
             "measured_attempts": 1
           },
@@ -2354,7 +2386,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.269643+00:00",
+              "started_at": "2026-11-12T19:59:54.333797+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -2449,7 +2481,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "form-cloakbrowser-3-a1",
+                "attempt_id": "form-cloakbrowser-session-0004-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 4000000,
                 "browser_payload_bytes": 4000000,
@@ -2465,6 +2497,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 4000000,
             "measured_attempts": 1
           },
@@ -2483,7 +2517,7 @@
               "epoch": 1,
               "outcome": "failed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.269991+00:00",
+              "started_at": "2026-11-12T19:59:54.334388+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -2510,7 +2544,7 @@
           "stratum_id": "f2cf03516b1ab486"
         }
       ],
-      "snapshot_sha256": "7a67eb2645769dec05db47403544e0e7026217bb1938409de59fad51a0d02158",
+      "snapshot_sha256": "9a7692ea677df4c15a9e99bbd9dbef986c6825fa4c86f5304f1597a00c6af91e",
       "config_sha256": "64c045c046d5784cd221610437eb68605ccc5330207554b4953bc287d0fae2be",
       "methodology": {
         "independent_interval": "95% Wilson",
@@ -2523,7 +2557,7 @@
         "sample_unit": "logical session",
         "reproduction": "Create a separate batch using the pinned target/workflow versions, adapter distribution, seed and proxy policy; restore compatible profile generations and record new trial identities. Never overwrite this snapshot."
       },
-      "analysis_sha256": "1fab79c7f66d800e4db54710c739a9c68e817153319e2043b0370fced0f2ae11",
+      "analysis_sha256": "17029baaaf8dbeebb300ed6164a2adf1987981d198a6c845d6a9124d0c074f03",
       "id": "f2cf03516b1ab486",
       "conditions": {
         "cost_currency": "EUR",
@@ -2698,6 +2732,7 @@
             },
             "measured_proxy_bytes": 10000000,
             "measured_attempts": 4,
+            "missing_usage_attempt_count": 0,
             "sessions_with_complete_proxy_estimate": 4,
             "sessions_with_total_cost": 0,
             "billing_status": "estimates_not_provider_invoices"
@@ -2838,6 +2873,7 @@
             },
             "measured_proxy_bytes": 10000000,
             "measured_attempts": 4,
+            "missing_usage_attempt_count": 0,
             "sessions_with_complete_proxy_estimate": 4,
             "sessions_with_total_cost": 0,
             "billing_status": "estimates_not_provider_invoices"
@@ -2977,7 +3013,7 @@
         },
         "planned": 8,
         "status": "completed",
-        "created_at": "2026-11-12T19:52:51.271816+00:00",
+        "created_at": "2026-11-12T19:59:54.335667+00:00",
         "finished_at": null,
         "trials": [
           {
@@ -3049,7 +3085,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "landing-playwright-0-a1",
+                  "attempt_id": "landing-playwright-session-0001-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 1000000,
                   "browser_payload_bytes": 1000000,
@@ -3065,6 +3101,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 1000000,
               "measured_attempts": 1
             },
@@ -3083,7 +3121,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.251318+00:00",
+                "started_at": "2026-11-12T19:59:54.326068+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -3178,7 +3216,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "landing-playwright-1-a1",
+                  "attempt_id": "landing-playwright-session-0002-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 2000000,
                   "browser_payload_bytes": 2000000,
@@ -3194,6 +3232,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 2000000,
               "measured_attempts": 1
             },
@@ -3212,7 +3252,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.253757+00:00",
+                "started_at": "2026-11-12T19:59:54.326766+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -3307,7 +3347,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "landing-playwright-2-a1",
+                  "attempt_id": "landing-playwright-session-0003-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 3000000,
                   "browser_payload_bytes": 3000000,
@@ -3323,6 +3363,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 3000000,
               "measured_attempts": 1
             },
@@ -3341,7 +3383,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.254991+00:00",
+                "started_at": "2026-11-12T19:59:54.327197+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -3436,7 +3478,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "landing-playwright-3-a1",
+                  "attempt_id": "landing-playwright-session-0004-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 4000000,
                   "browser_payload_bytes": 4000000,
@@ -3452,6 +3494,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 4000000,
               "measured_attempts": 1
             },
@@ -3470,7 +3514,7 @@
                 "epoch": 1,
                 "outcome": "failed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.258728+00:00",
+                "started_at": "2026-11-12T19:59:54.327592+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -3565,7 +3609,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "landing-cloakbrowser-0-a1",
+                  "attempt_id": "landing-cloakbrowser-session-0001-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 1000000,
                   "browser_payload_bytes": 1000000,
@@ -3581,6 +3625,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 1000000,
               "measured_attempts": 1
             },
@@ -3599,7 +3645,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.260782+00:00",
+                "started_at": "2026-11-12T19:59:54.328110+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -3694,7 +3740,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "landing-cloakbrowser-1-a1",
+                  "attempt_id": "landing-cloakbrowser-session-0002-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 2000000,
                   "browser_payload_bytes": 2000000,
@@ -3710,6 +3756,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 2000000,
               "measured_attempts": 1
             },
@@ -3728,7 +3776,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.261331+00:00",
+                "started_at": "2026-11-12T19:59:54.328519+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -3823,7 +3871,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "landing-cloakbrowser-2-a1",
+                  "attempt_id": "landing-cloakbrowser-session-0003-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 3000000,
                   "browser_payload_bytes": 3000000,
@@ -3839,6 +3887,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 3000000,
               "measured_attempts": 1
             },
@@ -3857,7 +3907,7 @@
                 "epoch": 1,
                 "outcome": "completed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.261767+00:00",
+                "started_at": "2026-11-12T19:59:54.329228+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -3952,7 +4002,7 @@
               ],
               "usage_attempts": [
                 {
-                  "attempt_id": "landing-cloakbrowser-3-a1",
+                  "attempt_id": "landing-cloakbrowser-session-0004-a1",
                   "provider": "oxylabs",
                   "proxy_bytes": 4000000,
                   "browser_payload_bytes": 4000000,
@@ -3968,6 +4018,8 @@
                   "budget_exhausted": false
                 }
               ],
+              "missing_usage_attempts": [],
+              "missing_usage_attempt_count": 0,
               "measured_proxy_bytes": 4000000,
               "measured_attempts": 1
             },
@@ -3986,7 +4038,7 @@
                 "epoch": 1,
                 "outcome": "failed",
                 "started_action": true,
-                "started_at": "2026-11-12T19:52:51.262156+00:00",
+                "started_at": "2026-11-12T19:59:54.330190+00:00",
                 "finished_at": "2026-11-12T12:00:00+00:00"
               }
             ],
@@ -4084,7 +4136,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "landing-playwright-0-a1",
+                "attempt_id": "landing-playwright-session-0001-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 1000000,
                 "browser_payload_bytes": 1000000,
@@ -4100,6 +4152,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 1000000,
             "measured_attempts": 1
           },
@@ -4118,7 +4172,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.251318+00:00",
+              "started_at": "2026-11-12T19:59:54.326068+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -4213,7 +4267,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "landing-playwright-1-a1",
+                "attempt_id": "landing-playwright-session-0002-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 2000000,
                 "browser_payload_bytes": 2000000,
@@ -4229,6 +4283,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 2000000,
             "measured_attempts": 1
           },
@@ -4247,7 +4303,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.253757+00:00",
+              "started_at": "2026-11-12T19:59:54.326766+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -4342,7 +4398,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "landing-playwright-2-a1",
+                "attempt_id": "landing-playwright-session-0003-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 3000000,
                 "browser_payload_bytes": 3000000,
@@ -4358,6 +4414,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 3000000,
             "measured_attempts": 1
           },
@@ -4376,7 +4434,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.254991+00:00",
+              "started_at": "2026-11-12T19:59:54.327197+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -4471,7 +4529,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "landing-playwright-3-a1",
+                "attempt_id": "landing-playwright-session-0004-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 4000000,
                 "browser_payload_bytes": 4000000,
@@ -4487,6 +4545,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 4000000,
             "measured_attempts": 1
           },
@@ -4505,7 +4565,7 @@
               "epoch": 1,
               "outcome": "failed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.258728+00:00",
+              "started_at": "2026-11-12T19:59:54.327592+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -4600,7 +4660,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "landing-cloakbrowser-0-a1",
+                "attempt_id": "landing-cloakbrowser-session-0001-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 1000000,
                 "browser_payload_bytes": 1000000,
@@ -4616,6 +4676,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 1000000,
             "measured_attempts": 1
           },
@@ -4634,7 +4696,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.260782+00:00",
+              "started_at": "2026-11-12T19:59:54.328110+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -4729,7 +4791,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "landing-cloakbrowser-1-a1",
+                "attempt_id": "landing-cloakbrowser-session-0002-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 2000000,
                 "browser_payload_bytes": 2000000,
@@ -4745,6 +4807,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 2000000,
             "measured_attempts": 1
           },
@@ -4763,7 +4827,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.261331+00:00",
+              "started_at": "2026-11-12T19:59:54.328519+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -4858,7 +4922,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "landing-cloakbrowser-2-a1",
+                "attempt_id": "landing-cloakbrowser-session-0003-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 3000000,
                 "browser_payload_bytes": 3000000,
@@ -4874,6 +4938,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 3000000,
             "measured_attempts": 1
           },
@@ -4892,7 +4958,7 @@
               "epoch": 1,
               "outcome": "completed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.261767+00:00",
+              "started_at": "2026-11-12T19:59:54.329228+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -4987,7 +5053,7 @@
             ],
             "usage_attempts": [
               {
-                "attempt_id": "landing-cloakbrowser-3-a1",
+                "attempt_id": "landing-cloakbrowser-session-0004-a1",
                 "provider": "oxylabs",
                 "proxy_bytes": 4000000,
                 "browser_payload_bytes": 4000000,
@@ -5003,6 +5069,8 @@
                 "budget_exhausted": false
               }
             ],
+            "missing_usage_attempts": [],
+            "missing_usage_attempt_count": 0,
             "measured_proxy_bytes": 4000000,
             "measured_attempts": 1
           },
@@ -5021,7 +5089,7 @@
               "epoch": 1,
               "outcome": "failed",
               "started_action": true,
-              "started_at": "2026-11-12T19:52:51.262156+00:00",
+              "started_at": "2026-11-12T19:59:54.330190+00:00",
               "finished_at": "2026-11-12T12:00:00+00:00"
             }
           ],
@@ -5048,7 +5116,7 @@
           "stratum_id": "3e21ff82234c6fef"
         }
       ],
-      "snapshot_sha256": "fd8a5dca9131284bd717a13cb0ebc59d0a029b1002126f8cf2c70dfd6aa9af1a",
+      "snapshot_sha256": "b6db2d02a6b57ff7357b2decca75320c9863bf93071cbf16ff45504d5a521ad0",
       "config_sha256": "cca89e7db49c850798ba61b0653f106343f67cfab07a745f2a7d2347acce2a9f",
       "methodology": {
         "independent_interval": "95% Wilson",
@@ -5061,7 +5129,7 @@
         "sample_unit": "logical session",
         "reproduction": "Create a separate batch using the pinned target/workflow versions, adapter distribution, seed and proxy policy; restore compatible profile generations and record new trial identities. Never overwrite this snapshot."
       },
-      "analysis_sha256": "324ccf7fe8baaa37495688908c091946ee22c6a6211a1647a8fbc255db995b18",
+      "analysis_sha256": "e5f643ab741f0abb065c564369906e2d7995676e70dc24fdf2d0c21291940e9e",
       "id": "3e21ff82234c6fef",
       "conditions": {
         "cost_currency": "EUR",
@@ -5230,6 +5298,7 @@
         },
         "measured_proxy_bytes": 10000000,
         "measured_attempts": 4,
+        "missing_usage_attempt_count": 0,
         "sessions_with_complete_proxy_estimate": 4,
         "sessions_with_total_cost": 0,
         "billing_status": "estimates_not_provider_invoices"
@@ -5370,6 +5439,7 @@
         },
         "measured_proxy_bytes": 10000000,
         "measured_attempts": 4,
+        "missing_usage_attempt_count": 0,
         "sessions_with_complete_proxy_estimate": 4,
         "sessions_with_total_cost": 0,
         "billing_status": "estimates_not_provider_invoices"
@@ -5510,6 +5580,7 @@
         },
         "measured_proxy_bytes": 10000000,
         "measured_attempts": 4,
+        "missing_usage_attempt_count": 0,
         "sessions_with_complete_proxy_estimate": 4,
         "sessions_with_total_cost": 0,
         "billing_status": "estimates_not_provider_invoices"
@@ -5650,6 +5721,7 @@
         },
         "measured_proxy_bytes": 10000000,
         "measured_attempts": 4,
+        "missing_usage_attempt_count": 0,
         "sessions_with_complete_proxy_estimate": 4,
         "sessions_with_total_cost": 0,
         "billing_status": "estimates_not_provider_invoices"
@@ -5753,7 +5825,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "landing-playwright-0-a1",
+            "attempt_id": "landing-playwright-session-0001-a1",
             "provider": "oxylabs",
             "proxy_bytes": 1000000,
             "browser_payload_bytes": 1000000,
@@ -5769,6 +5841,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 1000000,
         "measured_attempts": 1
       },
@@ -5787,7 +5861,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.251318+00:00",
+          "started_at": "2026-11-12T19:59:54.326068+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -5882,7 +5956,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "landing-playwright-1-a1",
+            "attempt_id": "landing-playwright-session-0002-a1",
             "provider": "oxylabs",
             "proxy_bytes": 2000000,
             "browser_payload_bytes": 2000000,
@@ -5898,6 +5972,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 2000000,
         "measured_attempts": 1
       },
@@ -5916,7 +5992,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.253757+00:00",
+          "started_at": "2026-11-12T19:59:54.326766+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -6011,7 +6087,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "landing-playwright-2-a1",
+            "attempt_id": "landing-playwright-session-0003-a1",
             "provider": "oxylabs",
             "proxy_bytes": 3000000,
             "browser_payload_bytes": 3000000,
@@ -6027,6 +6103,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 3000000,
         "measured_attempts": 1
       },
@@ -6045,7 +6123,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.254991+00:00",
+          "started_at": "2026-11-12T19:59:54.327197+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -6140,7 +6218,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "landing-playwright-3-a1",
+            "attempt_id": "landing-playwright-session-0004-a1",
             "provider": "oxylabs",
             "proxy_bytes": 4000000,
             "browser_payload_bytes": 4000000,
@@ -6156,6 +6234,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 4000000,
         "measured_attempts": 1
       },
@@ -6174,7 +6254,7 @@
           "epoch": 1,
           "outcome": "failed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.258728+00:00",
+          "started_at": "2026-11-12T19:59:54.327592+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -6269,7 +6349,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "landing-cloakbrowser-0-a1",
+            "attempt_id": "landing-cloakbrowser-session-0001-a1",
             "provider": "oxylabs",
             "proxy_bytes": 1000000,
             "browser_payload_bytes": 1000000,
@@ -6285,6 +6365,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 1000000,
         "measured_attempts": 1
       },
@@ -6303,7 +6385,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.260782+00:00",
+          "started_at": "2026-11-12T19:59:54.328110+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -6398,7 +6480,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "landing-cloakbrowser-1-a1",
+            "attempt_id": "landing-cloakbrowser-session-0002-a1",
             "provider": "oxylabs",
             "proxy_bytes": 2000000,
             "browser_payload_bytes": 2000000,
@@ -6414,6 +6496,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 2000000,
         "measured_attempts": 1
       },
@@ -6432,7 +6516,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.261331+00:00",
+          "started_at": "2026-11-12T19:59:54.328519+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -6527,7 +6611,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "landing-cloakbrowser-2-a1",
+            "attempt_id": "landing-cloakbrowser-session-0003-a1",
             "provider": "oxylabs",
             "proxy_bytes": 3000000,
             "browser_payload_bytes": 3000000,
@@ -6543,6 +6627,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 3000000,
         "measured_attempts": 1
       },
@@ -6561,7 +6647,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.261767+00:00",
+          "started_at": "2026-11-12T19:59:54.329228+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -6656,7 +6742,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "landing-cloakbrowser-3-a1",
+            "attempt_id": "landing-cloakbrowser-session-0004-a1",
             "provider": "oxylabs",
             "proxy_bytes": 4000000,
             "browser_payload_bytes": 4000000,
@@ -6672,6 +6758,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 4000000,
         "measured_attempts": 1
       },
@@ -6690,7 +6778,7 @@
           "epoch": 1,
           "outcome": "failed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.262156+00:00",
+          "started_at": "2026-11-12T19:59:54.330190+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -6785,7 +6873,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "form-playwright-0-a1",
+            "attempt_id": "form-playwright-session-0001-a1",
             "provider": "oxylabs",
             "proxy_bytes": 1000000,
             "browser_payload_bytes": 1000000,
@@ -6801,6 +6889,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 1000000,
         "measured_attempts": 1
       },
@@ -6819,7 +6909,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.262605+00:00",
+          "started_at": "2026-11-12T19:59:54.330823+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -6914,7 +7004,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "form-playwright-1-a1",
+            "attempt_id": "form-playwright-session-0002-a1",
             "provider": "oxylabs",
             "proxy_bytes": 2000000,
             "browser_payload_bytes": 2000000,
@@ -6930,6 +7020,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 2000000,
         "measured_attempts": 1
       },
@@ -6948,7 +7040,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.262950+00:00",
+          "started_at": "2026-11-12T19:59:54.331254+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -7043,7 +7135,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "form-playwright-2-a1",
+            "attempt_id": "form-playwright-session-0003-a1",
             "provider": "oxylabs",
             "proxy_bytes": 3000000,
             "browser_payload_bytes": 3000000,
@@ -7059,6 +7151,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 3000000,
         "measured_attempts": 1
       },
@@ -7077,7 +7171,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.264802+00:00",
+          "started_at": "2026-11-12T19:59:54.331632+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -7172,7 +7266,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "form-playwright-3-a1",
+            "attempt_id": "form-playwright-session-0004-a1",
             "provider": "oxylabs",
             "proxy_bytes": 4000000,
             "browser_payload_bytes": 4000000,
@@ -7188,6 +7282,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 4000000,
         "measured_attempts": 1
       },
@@ -7206,7 +7302,7 @@
           "epoch": 1,
           "outcome": "failed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.267960+00:00",
+          "started_at": "2026-11-12T19:59:54.332015+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -7301,7 +7397,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "form-cloakbrowser-0-a1",
+            "attempt_id": "form-cloakbrowser-session-0001-a1",
             "provider": "oxylabs",
             "proxy_bytes": 1000000,
             "browser_payload_bytes": 1000000,
@@ -7317,6 +7413,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 1000000,
         "measured_attempts": 1
       },
@@ -7335,7 +7433,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.268838+00:00",
+          "started_at": "2026-11-12T19:59:54.332821+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -7430,7 +7528,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "form-cloakbrowser-1-a1",
+            "attempt_id": "form-cloakbrowser-session-0002-a1",
             "provider": "oxylabs",
             "proxy_bytes": 2000000,
             "browser_payload_bytes": 2000000,
@@ -7446,6 +7544,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 2000000,
         "measured_attempts": 1
       },
@@ -7464,7 +7564,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.269274+00:00",
+          "started_at": "2026-11-12T19:59:54.333358+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -7559,7 +7659,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "form-cloakbrowser-2-a1",
+            "attempt_id": "form-cloakbrowser-session-0003-a1",
             "provider": "oxylabs",
             "proxy_bytes": 3000000,
             "browser_payload_bytes": 3000000,
@@ -7575,6 +7675,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 3000000,
         "measured_attempts": 1
       },
@@ -7593,7 +7695,7 @@
           "epoch": 1,
           "outcome": "completed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.269643+00:00",
+          "started_at": "2026-11-12T19:59:54.333797+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -7688,7 +7790,7 @@
         ],
         "usage_attempts": [
           {
-            "attempt_id": "form-cloakbrowser-3-a1",
+            "attempt_id": "form-cloakbrowser-session-0004-a1",
             "provider": "oxylabs",
             "proxy_bytes": 4000000,
             "browser_payload_bytes": 4000000,
@@ -7704,6 +7806,8 @@
             "budget_exhausted": false
           }
         ],
+        "missing_usage_attempts": [],
+        "missing_usage_attempt_count": 0,
         "measured_proxy_bytes": 4000000,
         "measured_attempts": 1
       },
@@ -7722,7 +7826,7 @@
           "epoch": 1,
           "outcome": "failed",
           "started_action": true,
-          "started_at": "2026-11-12T19:52:51.269991+00:00",
+          "started_at": "2026-11-12T19:59:54.334388+00:00",
           "finished_at": "2026-11-12T12:00:00+00:00"
         }
       ],
@@ -7884,7 +7988,7 @@
       ]
     },
     "planned": 16,
-    "created_at": "2026-11-12T19:52:51.271816+00:00",
+    "created_at": "2026-11-12T19:59:54.335667+00:00",
     "status": "completed",
     "randomization": {
       "seed": 13,
@@ -8107,7 +8211,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "landing-playwright-0-a1",
+              "attempt_id": "landing-playwright-session-0001-a1",
               "provider": "oxylabs",
               "proxy_bytes": 1000000,
               "browser_payload_bytes": 1000000,
@@ -8123,6 +8227,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 1000000,
           "measured_attempts": 1
         },
@@ -8141,7 +8247,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.251318+00:00",
+            "started_at": "2026-11-12T19:59:54.326068+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -8236,7 +8342,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "landing-playwright-1-a1",
+              "attempt_id": "landing-playwright-session-0002-a1",
               "provider": "oxylabs",
               "proxy_bytes": 2000000,
               "browser_payload_bytes": 2000000,
@@ -8252,6 +8358,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 2000000,
           "measured_attempts": 1
         },
@@ -8270,7 +8378,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.253757+00:00",
+            "started_at": "2026-11-12T19:59:54.326766+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -8365,7 +8473,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "landing-playwright-2-a1",
+              "attempt_id": "landing-playwright-session-0003-a1",
               "provider": "oxylabs",
               "proxy_bytes": 3000000,
               "browser_payload_bytes": 3000000,
@@ -8381,6 +8489,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 3000000,
           "measured_attempts": 1
         },
@@ -8399,7 +8509,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.254991+00:00",
+            "started_at": "2026-11-12T19:59:54.327197+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -8494,7 +8604,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "landing-playwright-3-a1",
+              "attempt_id": "landing-playwright-session-0004-a1",
               "provider": "oxylabs",
               "proxy_bytes": 4000000,
               "browser_payload_bytes": 4000000,
@@ -8510,6 +8620,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 4000000,
           "measured_attempts": 1
         },
@@ -8528,7 +8640,7 @@
             "epoch": 1,
             "outcome": "failed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.258728+00:00",
+            "started_at": "2026-11-12T19:59:54.327592+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -8623,7 +8735,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "landing-cloakbrowser-0-a1",
+              "attempt_id": "landing-cloakbrowser-session-0001-a1",
               "provider": "oxylabs",
               "proxy_bytes": 1000000,
               "browser_payload_bytes": 1000000,
@@ -8639,6 +8751,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 1000000,
           "measured_attempts": 1
         },
@@ -8657,7 +8771,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.260782+00:00",
+            "started_at": "2026-11-12T19:59:54.328110+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -8752,7 +8866,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "landing-cloakbrowser-1-a1",
+              "attempt_id": "landing-cloakbrowser-session-0002-a1",
               "provider": "oxylabs",
               "proxy_bytes": 2000000,
               "browser_payload_bytes": 2000000,
@@ -8768,6 +8882,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 2000000,
           "measured_attempts": 1
         },
@@ -8786,7 +8902,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.261331+00:00",
+            "started_at": "2026-11-12T19:59:54.328519+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -8881,7 +8997,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "landing-cloakbrowser-2-a1",
+              "attempt_id": "landing-cloakbrowser-session-0003-a1",
               "provider": "oxylabs",
               "proxy_bytes": 3000000,
               "browser_payload_bytes": 3000000,
@@ -8897,6 +9013,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 3000000,
           "measured_attempts": 1
         },
@@ -8915,7 +9033,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.261767+00:00",
+            "started_at": "2026-11-12T19:59:54.329228+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -9010,7 +9128,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "landing-cloakbrowser-3-a1",
+              "attempt_id": "landing-cloakbrowser-session-0004-a1",
               "provider": "oxylabs",
               "proxy_bytes": 4000000,
               "browser_payload_bytes": 4000000,
@@ -9026,6 +9144,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 4000000,
           "measured_attempts": 1
         },
@@ -9044,7 +9164,7 @@
             "epoch": 1,
             "outcome": "failed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.262156+00:00",
+            "started_at": "2026-11-12T19:59:54.330190+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -9139,7 +9259,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "form-playwright-0-a1",
+              "attempt_id": "form-playwright-session-0001-a1",
               "provider": "oxylabs",
               "proxy_bytes": 1000000,
               "browser_payload_bytes": 1000000,
@@ -9155,6 +9275,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 1000000,
           "measured_attempts": 1
         },
@@ -9173,7 +9295,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.262605+00:00",
+            "started_at": "2026-11-12T19:59:54.330823+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -9268,7 +9390,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "form-playwright-1-a1",
+              "attempt_id": "form-playwright-session-0002-a1",
               "provider": "oxylabs",
               "proxy_bytes": 2000000,
               "browser_payload_bytes": 2000000,
@@ -9284,6 +9406,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 2000000,
           "measured_attempts": 1
         },
@@ -9302,7 +9426,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.262950+00:00",
+            "started_at": "2026-11-12T19:59:54.331254+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -9397,7 +9521,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "form-playwright-2-a1",
+              "attempt_id": "form-playwright-session-0003-a1",
               "provider": "oxylabs",
               "proxy_bytes": 3000000,
               "browser_payload_bytes": 3000000,
@@ -9413,6 +9537,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 3000000,
           "measured_attempts": 1
         },
@@ -9431,7 +9557,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.264802+00:00",
+            "started_at": "2026-11-12T19:59:54.331632+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -9526,7 +9652,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "form-playwright-3-a1",
+              "attempt_id": "form-playwright-session-0004-a1",
               "provider": "oxylabs",
               "proxy_bytes": 4000000,
               "browser_payload_bytes": 4000000,
@@ -9542,6 +9668,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 4000000,
           "measured_attempts": 1
         },
@@ -9560,7 +9688,7 @@
             "epoch": 1,
             "outcome": "failed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.267960+00:00",
+            "started_at": "2026-11-12T19:59:54.332015+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -9655,7 +9783,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "form-cloakbrowser-0-a1",
+              "attempt_id": "form-cloakbrowser-session-0001-a1",
               "provider": "oxylabs",
               "proxy_bytes": 1000000,
               "browser_payload_bytes": 1000000,
@@ -9671,6 +9799,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 1000000,
           "measured_attempts": 1
         },
@@ -9689,7 +9819,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.268838+00:00",
+            "started_at": "2026-11-12T19:59:54.332821+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -9784,7 +9914,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "form-cloakbrowser-1-a1",
+              "attempt_id": "form-cloakbrowser-session-0002-a1",
               "provider": "oxylabs",
               "proxy_bytes": 2000000,
               "browser_payload_bytes": 2000000,
@@ -9800,6 +9930,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 2000000,
           "measured_attempts": 1
         },
@@ -9818,7 +9950,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.269274+00:00",
+            "started_at": "2026-11-12T19:59:54.333358+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -9913,7 +10045,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "form-cloakbrowser-2-a1",
+              "attempt_id": "form-cloakbrowser-session-0003-a1",
               "provider": "oxylabs",
               "proxy_bytes": 3000000,
               "browser_payload_bytes": 3000000,
@@ -9929,6 +10061,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 3000000,
           "measured_attempts": 1
         },
@@ -9947,7 +10081,7 @@
             "epoch": 1,
             "outcome": "completed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.269643+00:00",
+            "started_at": "2026-11-12T19:59:54.333797+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -10042,7 +10176,7 @@
           ],
           "usage_attempts": [
             {
-              "attempt_id": "form-cloakbrowser-3-a1",
+              "attempt_id": "form-cloakbrowser-session-0004-a1",
               "provider": "oxylabs",
               "proxy_bytes": 4000000,
               "browser_payload_bytes": 4000000,
@@ -10058,6 +10192,8 @@
               "budget_exhausted": false
             }
           ],
+          "missing_usage_attempts": [],
+          "missing_usage_attempt_count": 0,
           "measured_proxy_bytes": 4000000,
           "measured_attempts": 1
         },
@@ -10076,7 +10212,7 @@
             "epoch": 1,
             "outcome": "failed",
             "started_action": true,
-            "started_at": "2026-11-12T19:52:51.269991+00:00",
+            "started_at": "2026-11-12T19:59:54.334388+00:00",
             "finished_at": "2026-11-12T12:00:00+00:00"
           }
         ],
@@ -10104,7 +10240,7 @@
       }
     ]
   },
-  "snapshot_sha256": "2539ba043ec009b6c79a7d123fdcadbbf43859a9cdaac23b22ad1346b4e7f3bf",
+  "snapshot_sha256": "3789187fff3b98f214e06c5a4dede4a1ad699e60469eea07a26011a8f6ccd1e0",
   "config_sha256": "dd8a17ad9c6fefccec54149a31f3e9f753323835807aab4a91a6719cf4713081",
   "recommendation": {
     "status": "simulated",
@@ -10127,5 +10263,5 @@
     "seed": 13,
     "reproduction": "Use the immutable experiment revision and recorded cross-group dispatch plan; never overwrite the exported snapshot."
   },
-  "analysis_sha256": "646ee702a80f927622a5eb60c63b2cc3418d002f579f5c1389f5f30fecbe587a"
+  "analysis_sha256": "e0fcc23291fe4baf02fe67ff1bb160783d3921de82dfb2f526ce8a53eee2d6cc"
 }

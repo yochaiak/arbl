@@ -323,7 +323,7 @@ def _batch_trials(db, batch: SessionBatch) -> list[dict]:
         # profile directories. The missing identity remains explicitly unknown.
         participant = metadata.get("participant_id") if session.ground_truth in {"human", "mixed"} else None
         cluster_id = "participant:" + str(participant) if participant else "profile:" + session.profile_id
-        cost_details = session_cost(metadata, config)
+        cost_details = session_cost(metadata, config, attempt_ids=[a.id for a in session_attempts])
         cost, cost_basis = cost_details["total"], cost_details["basis"]
         trials.append(
             {
@@ -909,7 +909,8 @@ def _metering_line(group):
         return "Transport cost metering is unavailable in this historical snapshot."
     return (
         f"Measured proxy bytes: {metering['measured_proxy_bytes']}; known proxy estimates by currency: "
-        f"{metering['known_proxy_subtotals']}. Estimates are not reconciled provider billing."
+        f"{metering['known_proxy_subtotals']}. Missing attempt usage records: "
+        f"{metering.get('missing_usage_attempt_count', 'unrecorded')}. Estimates are not reconciled provider billing."
     )
 
 

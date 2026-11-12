@@ -94,6 +94,26 @@ def test_mixed_currency_attempts_keep_separate_subtotals():
     assert result["estimated_proxy_cost"] is None and result["total"] is None
 
 
+def test_missing_crashed_attempt_usage_preserves_subtotal_but_blocks_complete_cost():
+    rows = record_attempt_usage(
+        {},
+        usage(1_000_000_000),
+        attempt_id="recovery",
+        proxy_config={"cost_per_gb": 2, "cost_currency": "EUR"},
+    )
+    result = session_cost({"usage_attempts": rows}, {}, attempt_ids=["crashed", "recovery"])
+    assert result["known_proxy_subtotals"] == {"EUR": 2}
+    assert result["estimated_proxy_cost"] is None and result["total"] is None
+    assert result["missing_usage_attempts"] == ["crashed"]
+    assert result["missing_usage_attempt_count"] == 1
+    explicit = session_cost(
+        {"usage_attempts": rows},
+        {"cost_per_session": 10, "cost_currency": "EUR"},
+        attempt_ids=["crashed", "recovery"],
+    )
+    assert explicit["total"] == 10 and explicit["basis"] == "configured_all_in_estimate"
+
+
 def test_fleet_deduplicates_observed_nodes_and_discloses_inventory_gaps():
     workers = [
         {"id": "one", "ready": True, "node_name": "node-1", "pool": "standard"},

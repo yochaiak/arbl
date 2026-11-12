@@ -1,0 +1,4 @@
+# Retain generated evidence byte-for-byte; PDF offsets and exported CSV CRLF matter.
+*.pdf binary
+*.png binary
+docs/delivery/*.csv -text whitespace=cr-at-eol

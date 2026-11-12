@@ -31,7 +31,7 @@ Each site must be owned or explicitly authorized. Additional navigation origins 
 
 ## Validation
 
-The final full Python run passed **247 tests**. A clean detached checkout of backend commit `11ad011` independently passed **215 non-integration tests** without a local `.env`; the 32 integration tests were included in the full local-stack run. All three Node verifier tests passed.
+The final full Python run passed **248 tests**. A clean detached checkout of backend commit `11ad011` independently passed **215 non-integration tests** without a local `.env`; the 32 integration tests were included in the full local-stack run. All three Node verifier tests passed.
 
 Final command results are recorded in `release-validation.json` next to this report. The validation performed during delivery includes:
 

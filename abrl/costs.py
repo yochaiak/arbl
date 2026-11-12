@@ -62,12 +62,16 @@ def record_attempt_usage(prior_metadata, metadata, *, attempt_id, proxy_config):
     return [*prior, row]
 
 
-def session_cost(metadata, config):
+def session_cost(metadata, config, *, attempt_ids=None):
     records = metadata.get("usage_attempts", [])
     if not records and metadata.get("transport_usage"):
         records = record_attempt_usage(
-            {}, metadata, attempt_id="unrecorded", proxy_config=metadata.get("proxy")
+            {},
+            metadata,
+            attempt_id=attempt_ids[0] if attempt_ids and len(attempt_ids) == 1 else "unrecorded",
+            proxy_config=metadata.get("proxy"),
         )
+    missing_usage = sorted(set(attempt_ids or []) - {row.get("attempt_id") for row in records})
     subtotals = defaultdict(float)
     for record in records:
         value = amount(record.get("estimated_proxy_cost"))
@@ -80,6 +84,7 @@ def session_cost(metadata, config):
         bool(records)
         and all(amount(r.get("estimated_proxy_cost")) is not None for r in records)
         and len(nonzero_units) <= 1
+        and not missing_usage
     )
     proxy_total = sum(amount(r["estimated_proxy_cost"]) for r in records) if proxy_known else None
     proxy_unit = next(iter(nonzero_units), None) or next(
@@ -125,6 +130,8 @@ def session_cost(metadata, config):
         "browser_license": browser,
         "missing_components": missing,
         "usage_attempts": records,
+        "missing_usage_attempts": missing_usage,
+        "missing_usage_attempt_count": len(missing_usage),
         "measured_proxy_bytes": sum(r.get("proxy_bytes") or 0 for r in records),
         "measured_attempts": sum(r.get("browser_payload_bytes") is not None for r in records),
     }
@@ -139,6 +146,7 @@ def group_costs(rows):
         "known_proxy_subtotals": dict(subtotals),
         "measured_proxy_bytes": sum(r["cost_details"]["measured_proxy_bytes"] for r in rows),
         "measured_attempts": sum(r["cost_details"]["measured_attempts"] for r in rows),
+        "missing_usage_attempt_count": sum(r["cost_details"]["missing_usage_attempt_count"] for r in rows),
         "sessions_with_complete_proxy_estimate": sum(
             r["cost_details"]["estimated_proxy_cost"] is not None for r in rows
         ),

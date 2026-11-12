@@ -1,14 +1,14 @@
 {
-  "recorded_at": "2026-11-12T19:56:35.546939+00:00",
+  "recorded_at": "2026-11-12T20:01:12.400457+00:00",
   "scope": "Local implementation validation; no live Hetzner, Oxylabs, licensed adapter or AdScore acceptance claimed",
   "backend_commit": "11ad011",
   "checks": [
     {
       "command": "uv run python -m pytest -q --disable-warnings",
       "result": "passed",
-      "passed": 247,
+      "passed": 248,
       "warnings": 2,
-      "duration_seconds": 64.28
+      "duration_seconds": 38.22
     },
     {
       "command": "python -m pytest -q -m 'not integration' --disable-warnings",
@@ -76,6 +76,16 @@
       "command": "Visual review of rendered UI and report screenshots",
       "result": "passed",
       "details": "Desktop/mobile templates, calendar, long-origin controls and fleet costs; every page of two-page batch and four-page experiment PDFs"
+    },
+    {
+      "command": "Final crash/retry usage-cost regression",
+      "result": "passed",
+      "details": "Actual attempt IDs reconciled against usage; missing crash metering remains unknown; included in final 248-test run"
+    },
+    {
+      "command": "Final five linux/amd64 image builds and exact source-hash comparisons",
+      "result": "passed",
+      "details": "API 53 files; standard browser 53; manual browser 54; web 25; verifier 3. Sandboxed real Chromium action/cleanup, native headed Chrome launch/cleanup and frontend HTTP200 passed. Local Docker emulation; no cloud claim."
     }
   ],
   "artifacts": {
@@ -95,5 +105,6 @@
     "Node loss, network partition, synchronous database failover and measured two-minute recovery",
     "Cross-location restoration into a new environment; measured RPO<=15 minutes and RTO<=4 hours",
     "100/250/500 actual concurrent browser capacity and licensed adapter capacity"
-  ]
+  ],
+  "frontend_commit": "6ad38f1"
 }
