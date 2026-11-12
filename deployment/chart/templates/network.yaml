@@ -1,0 +1,127 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: dns}
+spec:
+  podSelector: {matchExpressions: [{key: abrl.io/role, operator: NotIn, values: [browser]}]}
+  policyTypes: [Egress]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: ingress-to-application}
+spec:
+  podSelector: {matchExpressions: [{key: abrl.io/role, operator: In, values: [control, web]}]}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {app.kubernetes.io/name: traefik}}}]
+      ports: [{port: 8400}, {port: 3000}]
+    - from: [{podSelector: {matchExpressions: [{key: abrl.io/role, operator: In, values: [control, web, observability]}]}}]
+      ports: [{port: 8400}, {port: 3000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: control-egress}
+spec:
+  podSelector: {matchExpressions: [{key: abrl.io/role, operator: In, values: [control, web, observability]}]}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: 10.43.0.1/32}}]
+      ports: [{protocol: TCP, port: 443}]
+    {{- range .Values.controlPlaneCidrs }}
+    - to: [{ipBlock: {cidr: {{ . | quote }}}}]
+      ports: [{protocol: TCP, port: 6443}]
+    {{- end }}
+    - to: [{podSelector: {matchExpressions: [{key: abrl.io/role, operator: In, values: [data, control, web, observability, broker, browser]}]}}]
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: abrl-postgres}}}]
+    # OIDC, S3 and verification use TLS; browsers are never granted this role.
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 127.0.0.0/8]}}]
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: data-replication-and-clients}
+spec:
+  podSelector: {matchExpressions: [{key: abrl.io/role, operator: In, values: [data]}]}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{podSelector: {matchExpressions: [{key: abrl.io/role, operator: In, values: [data, control, runner, observability]}]}}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: keda}}}]
+  egress:
+    - to: [{podSelector: {matchLabels: {abrl.io/role: data}}}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: postgres}
+spec:
+  podSelector: {matchLabels: {cnpg.io/cluster: abrl-postgres}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {abrl.io/role: observability}}}]
+      ports: [{port: 9187}]
+    - from: [{podSelector: {matchExpressions: [{key: abrl.io/role, operator: In, values: [control, runner, observability]}]}}]
+      ports: [{port: 5432}]
+    - from: [{podSelector: {matchLabels: {cnpg.io/cluster: abrl-postgres}}}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cnpg-system}}}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: keda}}}]
+      ports: [{port: 5432}]
+  egress:
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: abrl-postgres}}}]
+    {{- range .Values.controlPlaneCidrs }}
+    - to: [{ipBlock: {cidr: {{ . | quote }}}}]
+      ports: [{protocol: TCP, port: 6443}]
+    {{- end }}
+    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: browser-egress-only-broker}
+spec:
+  podSelector: {matchLabels: {abrl.io/role: browser}}
+  policyTypes: [Ingress, Egress]
+  # Only per-session policies created by CloudRuntime grant access.
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: broker}
+spec:
+  podSelector: {matchLabels: {abrl.io/role: broker}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 127.0.0.0/8]}}]
+      ports: [{protocol: TCP, port: 443}, {protocol: TCP, port: 80}, {protocol: TCP, port: 7777}, {protocol: TCP, port: 8000}, {protocol: TCP, port: 60000}]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: runner-control-only}
+spec:
+  podSelector: {matchLabels: {abrl.io/role: runner}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: 10.43.0.1/32}}]
+      ports: [{port: 443}]
+    {{- range .Values.controlPlaneCidrs }}
+    - to: [{ipBlock: {cidr: {{ . | quote }}}}]
+      ports: [{protocol: TCP, port: 6443}]
+    {{- end }}
+    - to: [{podSelector: {matchLabels: {cnpg.io/cluster: abrl-postgres}}}]
+      ports: [{port: 5432}]
+    - to: [{podSelector: {matchExpressions: [{key: abrl.io/role, operator: In, values: [data, browser, broker, observability]}]}}]
+      ports: [{port: 6379}, {port: 26379}, {port: 9222}, {port: 3128}, {port: 4318}]
+    {{- range .Values.cloudWorkers.objectStorageCidrs }}
+    - to: [{ipBlock: {cidr: {{ . | quote }}}}]
+      ports: [{port: 443}]
+    {{- end }}

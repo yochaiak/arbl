@@ -1,0 +1,46 @@
+{
+  "location": "fsn1",
+  "backup_location": "hel1",
+  "domain": "abrl.example.invalid",
+  "maximum_sessions": 500,
+  "state_locking_verified": false,
+  "pools": {
+    "standard": {
+      "server_type": "ccx63",
+      "vcpus": 48,
+      "memory_gib": 192,
+      "min_nodes": 2,
+      "max_nodes": 30,
+      "reserve_vcpus": 1,
+      "reserve_memory_gib": 2,
+      "hourly_price": null,
+      "currency": null
+    },
+    "vendor": {
+      "server_type": "ccx63",
+      "vcpus": 48,
+      "memory_gib": 192,
+      "min_nodes": 0,
+      "max_nodes": 50,
+      "reserve_vcpus": 1,
+      "reserve_memory_gib": 2,
+      "hourly_price": null,
+      "currency": null
+    }
+  },
+  "cluster_name": "abrl",
+  "foundation": {
+    "control": {
+      "server_type": "cpx31",
+      "count": 3
+    },
+    "data": {
+      "server_type": "cpx51",
+      "count": 3
+    },
+    "app": {
+      "server_type": "cpx41",
+      "count": 2
+    }
+  }
+}

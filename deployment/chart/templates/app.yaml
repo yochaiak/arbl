@@ -1,0 +1,139 @@
+{{- if .Values.application.enabled }}
+{{- range $name, $component := dict "api" "api" "scheduler" "scheduler" "tasks" "tasks" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: abrl-{{ $name }}
+spec:
+  replicas: {{ if eq $name "api" }}{{ $.Values.apiReplicas }}{{ else if eq $name "scheduler" }}{{ $.Values.schedulerReplicas }}{{ else }}2{{ end }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app: abrl-{{ $name }}}}
+  template:
+    metadata:
+      labels: {app: abrl-{{ $name }}, abrl.io/role: control}
+    spec:
+      {{- include "abrl.applicationNode" $ | nindent 6 }}
+      imagePullSecrets: {{ toJson $.Values.imagePullSecrets }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        {{- include "abrl.podSecurity" $ | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: {matchLabels: {app: abrl-{{ $name }}}}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "abrl.image" $.Values.image }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          {{- if eq $name "api" }}
+          command: ["uvicorn", "abrl.api:app", "--host", "0.0.0.0", "--port", "8400", "--no-access-log", "--proxy-headers", "--forwarded-allow-ips", "10.42.0.0/16"]
+          ports: [{name: http, containerPort: 8400}]
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 30, periodSeconds: 15}
+          {{- else if eq $name "scheduler" }}
+          command: ["python", "-m", "abrl.scheduler_service"]
+          {{- else }}
+          command: ["dramatiq", "abrl.runtime", "--processes", "1", "--threads", "4"]
+          {{- end }}
+          envFrom: [{secretRef: {name: {{ $.Values.runtimeSecret }}}}]
+          env:
+            - {name: ABRL_DEPLOYMENT, value: cloud}
+            - {name: ABRL_ENVIRONMENT, value: cloud}
+            - {name: ABRL_BROWSER_IMAGE, value: {{ $.Values.cloudWorkers.browserImage | quote }}}
+            - {name: ABRL_BROWSER_IMAGE_MANUAL_CHROME, value: {{ $.Values.cloudWorkers.manualImage | quote }}}
+            - {name: ABRL_CLOAK_BROWSER_IMAGE, value: {{ $.Values.cloudWorkers.cloakImage | quote }}}
+            - {name: ABRL_KAMELEO_BROWSER_IMAGE, value: {{ $.Values.cloudWorkers.kameleoImage | quote }}}
+            - {name: ABRL_KAMELEO_ENGINE_IMAGE, value: {{ $.Values.cloudWorkers.kameleoEngineImage | quote }}}
+            - {name: ABRL_KAMELEO_CONTROL_ORIGINS_JSON, value: {{ toJson $.Values.cloudWorkers.kameleoControlOrigins | quote }}}
+            - {name: ABRL_IMAGE_PULL_SECRETS, value: {{ toJson $.Values.imagePullSecrets | quote }}}
+            - {name: ABRL_GLOBAL_CONCURRENCY, value: {{ $.Values.maximumSessions | quote }}}
+            - {name: ABRL_REDIS_SENTINELS, value: "abrl-redis-0.abrl-redis:26379,abrl-redis-1.abrl-redis:26379,abrl-redis-2.abrl-redis:26379"}
+            - {name: ABRL_REDIS_MASTER, value: abrl-master}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://abrl-otel:4318"}
+          resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}, {name: data, mountPath: /app/.abrl}]
+        {{- if and (eq $name "api") $.Values.verifier.enabled }}
+        - name: adscore-verifier
+          image: {{ $.Values.verifier.image }}
+          envFrom: [{secretRef: {name: {{ $.Values.verifier.secret }}}}]
+          resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          readinessProbe:
+            exec:
+              command: [node, -e, "fetch('http://127.0.0.1:8001/health',{headers:{Authorization:'Bearer '+process.env.ABRL_VERIFIER_TOKEN}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+            initialDelaySeconds: 5
+        {{- end }}
+      volumes: [{name: tmp, emptyDir: {}}, {name: data, emptyDir: {}}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: abrl-{{ $name }}}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: abrl-{{ $name }}}}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata: {name: abrl-api}
+spec:
+  selector: {app: abrl-api}
+  ports: [{name: http, port: 8400, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: abrl-web}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: abrl-web}}
+  template:
+    metadata: {labels: {app: abrl-web, abrl.io/role: web}}
+    spec:
+      {{- include "abrl.applicationNode" . | nindent 6 }}
+      {{- include "abrl.spread" "abrl-web" | nindent 6 }}
+      imagePullSecrets: {{ toJson $.Values.imagePullSecrets }}
+      automountServiceAccountToken: false
+      containers:
+        - name: web
+          image: {{ include "abrl.image" .Values.webImage }}
+          ports: [{name: http, containerPort: 3000}]
+          env: [{name: ABRL_API_URL, value: "http://abrl-api:8400"}, {name: HOSTNAME, value: "0.0.0.0"}]
+          resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "2", memory: 1Gi}}
+          readinessProbe: {httpGet: {path: /, port: http}}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: abrl-web}
+spec:
+  selector: {app: abrl-web}
+  ports: [{name: http, port: 3000, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: abrl-web}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: abrl-web}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: abrl
+  annotations: {traefik.ingress.kubernetes.io/router.entrypoints: websecure}
+spec:
+  ingressClassName: traefik
+  tls: [{hosts: [{{ .Values.host | quote }}], secretName: {{ .Values.tlsSecret }}}]
+  rules:
+    - host: {{ .Values.host | quote }}
+      http:
+        paths:
+          - {path: /auth, pathType: Prefix, backend: {service: {name: abrl-api, port: {number: 8400}}}}
+          - {path: /lab, pathType: Prefix, backend: {service: {name: abrl-api, port: {number: 8400}}}}
+          - {path: /api, pathType: Prefix, backend: {service: {name: abrl-api, port: {number: 8400}}}}
+          - {path: /, pathType: Prefix, backend: {service: {name: abrl-web, port: {number: 3000}}}}
+
+{{- end }}

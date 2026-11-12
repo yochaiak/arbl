@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 API_ORIGIN = "http://127.0.0.1:8400"
+CONTROLLED_ORIGIN = os.getenv("ABRL_CONTROLLED_ORIGIN", "").rstrip("/")
 WEB_ORIGIN = os.getenv("ABRL_WEB_ORIGIN", "http://localhost:8430")
 DATABASE_URL = os.getenv("ABRL_DATABASE_URL", "sqlite:///.abrl/lab.sqlite3")
 REDIS_URL = os.getenv("ABRL_REDIS_URL", "redis://127.0.0.1:6379/0")

@@ -1,0 +1,75 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: {name: abrl-postgres}
+spec:
+  instances: 3
+  imageName: {{ .Values.postgres.image }}
+  primaryUpdateStrategy: supervised
+  monitoring:
+    tls: {enabled: false}
+  enableSuperuserAccess: false
+  managed:
+    roles:
+      - name: abrl_scaler
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        connectionLimit: 20
+        passwordSecret: {name: abrl-postgres-scaler}
+  postgresql:
+    parameters:
+      archive_timeout: "60s"
+      synchronous_commit: "on"
+    synchronous:
+      method: any
+      number: 1
+      dataDurability: required
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required
+    nodeSelector: {abrl.io/role: data}
+    tolerations: [{key: abrl.io/data, operator: Equal, value: "true", effect: NoSchedule}]
+  bootstrap:
+    initdb:
+      database: abrl
+      owner: abrl
+      secret: {name: abrl-postgres-app}
+  storage: {size: {{ .Values.postgres.size }}, storageClass: {{ .Values.storageClass }}}
+  resources: {requests: {cpu: "1", memory: 2Gi}, limits: {cpu: "4", memory: 8Gi}}
+  {{- if .Values.postgres.backupsEnabled }}
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters: {barmanObjectName: abrl-postgres-backups}
+  {{- end }}
+{{- if .Values.postgres.backupsEnabled }}
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata: {name: abrl-postgres-backups}
+spec:
+  retentionPolicy: 30d
+  configuration:
+    destinationPath: {{ required "postgres.backupDestination required" .Values.postgres.backupDestination | quote }}
+    endpointURL: {{ required "postgres.backupEndpoint required" .Values.postgres.backupEndpoint | quote }}
+    s3Credentials:
+      accessKeyId: {name: abrl-backup-s3, key: ACCESS_KEY_ID}
+      secretAccessKey: {name: abrl-backup-s3, key: ACCESS_SECRET_KEY}
+      sseCustomerKey: {name: abrl-backup-s3, key: SSE_CUSTOMER_KEY}
+    wal: {compression: gzip, maxParallel: 4}
+    data: {compression: gzip}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata: {name: abrl-postgres-daily}
+spec:
+  schedule: "0 0 2 * * *"
+  backupOwnerReference: self
+  cluster: {name: abrl-postgres}
+  method: plugin
+  pluginConfiguration: {name: barman-cloud.cloudnative-pg.io}
+  immediate: true
+{{- end }}

@@ -6,15 +6,29 @@ import asyncio
 import ipaddress
 import re
 import socket
+import ssl
 from collections.abc import Callable
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from time import monotonic
 from urllib.parse import urlsplit
 
 from .config import API_ORIGIN
+from .proxy import OxylabsBinding, classify_proxy_failure
 
 FIXTURE_ORIGIN = API_ORIGIN
 FIXTURE_PORT = urlsplit(FIXTURE_ORIGIN).port
 FIXTURE_PATHS = frozenset(
-    {"/lab", "/lab/", "/lab/interaction", "/lab/form", "/lab/next", "/lab/finish", "/lab/repeat"}
+    {
+        "/lab",
+        "/lab/",
+        "/lab/interaction",
+        "/lab/form",
+        "/lab/next",
+        "/lab/finish",
+        "/lab/repeat",
+        "/lab/research",
+    }
 )
 _DOMAIN = re.compile(
     r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
@@ -24,6 +38,10 @@ _DOMAIN = re.compile(
 
 class NetworkDenied(ValueError):
     """A URL, address, or proxy request violated the registered scope."""
+
+
+class ConnectionCapacityExceeded(ValueError):
+    """A session's reserved target connection slots are occupied."""
 
 
 def _public_ipv4(address: str) -> bool:
@@ -99,18 +117,49 @@ class EgressGuard:
         origin: str,
         resource_origins: list[str],
         deny_target: Callable[[str], None],
+        upstream: OxylabsBinding | None = None,
+        bind_host: str = "127.0.0.1",
+        bind_port: int = 0,
+        navigation_origins: list[str] | None = None,
+        traffic_budget_bytes: int = 104857600,
+        max_connections: int = 32,
     ) -> None:
         self.origin = normalize_origin(origin)
         self.resources = {normalize_origin(item) for item in resource_origins}
-        if self.origin != FIXTURE_ORIGIN and FIXTURE_ORIGIN in self.resources:
+        self.navigation_origins = {self.origin} | {
+            normalize_origin(item) for item in navigation_origins or []
+        }
+        if self.origin != FIXTURE_ORIGIN and FIXTURE_ORIGIN in self.resources | self.navigation_origins:
             raise NetworkDenied("A remote target cannot access the local fixture")
-        self.allowed = self.resources | {self.origin}
+        self.allowed = self.resources | self.navigation_origins
         self.deny_target = deny_target
+        self.upstream = upstream
+        if upstream is not None and self.origin == FIXTURE_ORIGIN:
+            raise NetworkDenied(
+                "Provider proxy trials require an authorized HTTPS target, not the local HTTP fixture"
+            )
+        self.transport_events: list[dict] = []
+        self.bind_host, self.bind_port = bind_host, bind_port
+        self.transport_attempts = self.transport_successes = 0
+        self.transport_latency_ms = 0.0
         self._connections: set[asyncio.Task] = set()
         self._closing = False
+        self.forwarding_enabled = True
+        if type(traffic_budget_bytes) is not int or not 1024 <= traffic_budget_bytes <= 2 * 1024**3:
+            raise ValueError("Traffic budget must be an integer from 1024 bytes to 2 GiB")
+        self.traffic_budget_bytes = traffic_budget_bytes
+        self.upstream_bytes = self.downstream_bytes = self.vendor_control_bytes = 0
+        self.budget_exhausted = False
+        self._transfer_writers: set[asyncio.StreamWriter] = set()
+        if type(max_connections) is not int or not 1 <= max_connections <= 32:
+            raise ValueError("Target connection limit must be an integer from 1 to 32")
+        self.max_connections = max_connections
+        self.active_target_connections = self.peak_target_connections = self.connection_rejections = 0
 
     async def __aenter__(self) -> EgressGuard:
-        self._server = await asyncio.start_server(self._handle, host="127.0.0.1", port=0, limit=16384)
+        self._server = await asyncio.start_server(
+            self._handle, host=self.bind_host, port=self.bind_port, limit=16384
+        )
         port = self._server.sockets[0].getsockname()[1]
         self.url = f"http://127.0.0.1:{port}"
         return self
@@ -139,10 +188,21 @@ class EgressGuard:
             method, address, version = first.decode("ascii").split()
             if version not in {"HTTP/1.0", "HTTP/1.1"}:
                 raise NetworkDenied("Unsupported HTTP version")
-            if method == "CONNECT":
-                await self._connect(reader, writer, address)
-            else:
-                await self._fixture(reader, writer, method, address, headers)
+            if not await self.authorize_request(method, address, headers, writer):
+                return
+            if self.budget_exhausted or not self.forwarding_allowed(method, address):
+                await self._reply(writer, b"503 Service Unavailable")
+                return
+            origin = (
+                normalize_origin("https://" + address) if method == "CONNECT" else request_origin(address)
+            )
+            with self._connection_slot(vendor_control=self.is_vendor_control(origin)):
+                if method == "CONNECT":
+                    await self._connect(reader, writer, address)
+                else:
+                    await self._fixture(reader, writer, method, address, headers)
+        except ConnectionCapacityExceeded:
+            await self._reply(writer, b"503 Service Unavailable")
         except NetworkDenied:
             await self._reply(writer, b"403 Forbidden")
         except (UnicodeError, ValueError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
@@ -156,6 +216,97 @@ class EgressGuard:
                 await writer.wait_closed()
             except OSError:
                 pass
+
+    async def authorize_request(self, method, address, headers, writer) -> bool:
+        """Remote broker overrides this hook; local loopback guard needs no credentials."""
+        return True
+
+    def forwarding_allowed(self, method, address):
+        return self.forwarding_enabled
+
+    def uses_upstream(self, origin):
+        return self.upstream is not None
+
+    def is_vendor_control(self, origin):
+        return False
+
+    @contextmanager
+    def _connection_slot(self, *, vendor_control=False):
+        if vendor_control:
+            yield
+            return
+        if self.active_target_connections >= self.max_connections:
+            self.connection_rejections += 1
+            if not any(event.get("kind") == "connection_capacity" for event in self.transport_events):
+                self.transport_events.append(
+                    {"kind": "connection_capacity", "action": "pause_assignment", "retryable": False}
+                )
+            raise ConnectionCapacityExceeded("Reserved proxy connection capacity is occupied")
+        self.active_target_connections += 1
+        self.peak_target_connections = max(self.peak_target_connections, self.active_target_connections)
+        try:
+            yield
+        finally:
+            self.active_target_connections -= 1
+
+    def transport_usage(self):
+        total = self.upstream_bytes + self.downstream_bytes
+        return {
+            "upstream_bytes": self.upstream_bytes,
+            "downstream_bytes": self.downstream_bytes,
+            "total_bytes": total,
+            "vendor_control_bytes": self.vendor_control_bytes,
+            "budget_consumed_bytes": total + self.vendor_control_bytes,
+            "limit_bytes": self.traffic_budget_bytes,
+            "budget_exhausted": self.budget_exhausted,
+            "measurement": "browser_payload_transport_bytes",
+            "billing_basis": "estimate_excludes_protocol_overhead",
+        }
+
+    def _charge_bytes(self, count: int, *, upstream: bool, vendor_control: bool = False) -> bool:
+        # No await between reservation and update: all tunnels share one atomic
+        # event-loop budget. Provider handshakes and broker control are excluded.
+        used = self.upstream_bytes + self.downstream_bytes + self.vendor_control_bytes
+        if self.budget_exhausted or used + count > self.traffic_budget_bytes:
+            self.budget_exhausted = True
+            self.forwarding_enabled = False
+            self.deny_target("Browser traffic byte budget exhausted")
+            for writer in tuple(self._transfer_writers):
+                writer.close()
+            return False
+        if vendor_control:
+            self.vendor_control_bytes += count
+        elif upstream:
+            self.upstream_bytes += count
+        else:
+            self.downstream_bytes += count
+        return True
+
+    async def _metered_pipe(self, reader, writer, *, upstream: bool, vendor_control: bool = False):
+        self._transfer_writers.add(writer)
+        try:
+            while chunk := await reader.read(65536):
+                if not self._charge_bytes(len(chunk), upstream=upstream, vendor_control=vendor_control):
+                    return
+                writer.write(chunk)
+                await writer.drain()
+        finally:
+            self._transfer_writers.discard(writer)
+
+    def transport_summary(self):
+        return {
+            "attempts": self.transport_attempts,
+            "successes": self.transport_successes,
+            "failures": self.transport_attempts - self.transport_successes,
+            "latency_ms": self.transport_latency_ms / self.transport_successes
+            if self.transport_successes
+            else None,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "connection_limit": self.max_connections,
+            "active_connections": self.active_target_connections,
+            "peak_connections": self.peak_target_connections,
+            "capacity_rejections": self.connection_rejections,
+        }
 
     @staticmethod
     async def _reply(writer: asyncio.StreamWriter, status: bytes) -> None:
@@ -182,26 +333,43 @@ class EgressGuard:
             if origin == self.origin:
                 self.deny_target(str(exc))
             raise
-        upstream = None
-        for ip in ips[:3]:
-            try:
-                upstream = await asyncio.wait_for(
-                    asyncio.open_connection(ip, port, family=socket.AF_INET), timeout=4
-                )
-                break
-            except (OSError, TimeoutError):
-                continue
+        started = monotonic()
+        use_upstream = self.uses_upstream(origin)
+        measured = not self.is_vendor_control(origin)
+        if measured:
+            self.transport_attempts += 1
+        upstream = await self._upstream_connect(address) if use_upstream else None
+        if not use_upstream:
+            for ip in ips[:3]:
+                try:
+                    upstream = await asyncio.wait_for(
+                        asyncio.open_connection(ip, port, family=socket.AF_INET), timeout=4
+                    )
+                    break
+                except (OSError, TimeoutError):
+                    continue
         if upstream is None:
             await self._reply(writer, b"502 Bad Gateway")
             return
+        if measured:
+            self.transport_successes += 1
+            self.transport_latency_ms += (monotonic() - started) * 1000
         source, sink = upstream
         transfers = []
         try:
             writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             await writer.drain()
             transfers = [
-                asyncio.create_task(self._pipe(reader, sink)),
-                asyncio.create_task(self._pipe(source, writer)),
+                asyncio.create_task(
+                    self._metered_pipe(
+                        reader, sink, upstream=True, vendor_control=self.is_vendor_control(origin)
+                    )
+                ),
+                asyncio.create_task(
+                    self._metered_pipe(
+                        source, writer, upstream=False, vendor_control=self.is_vendor_control(origin)
+                    )
+                ),
             ]
             await asyncio.wait(transfers, return_when=asyncio.FIRST_COMPLETED)
         finally:
@@ -213,6 +381,67 @@ class EgressGuard:
                 await sink.wait_closed()
             except OSError:
                 pass
+
+    async def _upstream_connect(self, address: str):
+        """Authenticate to the provider over TLS; the browser never sees its credentials.
+
+        Target DNS was checked locally, but the provider resolves the hostname
+        again. The explicitly acknowledged boundary is reported in metadata.
+        """
+        binding = self.upstream
+        assert binding is not None
+        sink = None
+        try:
+            gateway_ips = await resolve_public_ipv4(binding.host, binding.port)
+            source, sink = await asyncio.wait_for(
+                asyncio.open_connection(
+                    gateway_ips[0],
+                    binding.port,
+                    family=socket.AF_INET,
+                    ssl=ssl.create_default_context(),
+                    server_hostname=binding.host,
+                ),
+                10,
+            )
+            request = (
+                f"CONNECT {address} HTTP/1.1\r\nHost: {address}\r\n".encode()
+                + b"Proxy-Authorization: "
+                + binding.authorization()
+                + b"\r\n\r\n"
+            )
+            sink.write(request)
+            await sink.drain()
+            head = await asyncio.wait_for(source.readuntil(b"\r\n\r\n"), 15)
+            if len(head) > 16384:
+                raise ValueError("Proxy response exceeded header budget")
+            lines = head.split(b"\r\n")
+            status = int(lines[0].split()[1])
+            if status == 200:
+                return source, sink
+            description = next(
+                (
+                    line.partition(b":")[2].decode("utf8", "replace")
+                    for line in lines
+                    if line.lower().startswith(b"x-error-description:")
+                ),
+                "",
+            )
+            event = classify_proxy_failure(status, description)
+            # Store only the normalized reason; vendor responses can contain identifiers.
+            self.transport_events.append({**event, "status": status})
+        except (OSError, TimeoutError, ValueError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+            self.transport_events.append({**classify_proxy_failure(None), "status": None})
+        except BaseException:
+            if sink is not None:
+                sink.close()
+            raise
+        if sink is not None:
+            sink.close()
+            try:
+                await sink.wait_closed()
+            except OSError:
+                pass
+        return None
 
     async def _fixture(
         self,
@@ -248,7 +477,7 @@ class EgressGuard:
                 content_length = int(value)
                 if content_length > 65536:
                     raise NetworkDenied("Fixture request body exceeds 64 KiB")
-            if lower_name in {b"content-type", b"cookie", b"user-agent", b"accept"}:
+            if lower_name in {b"content-type", b"cookie", b"user-agent", b"accept", b"origin"}:
                 forwarded.append(header)
         body = await asyncio.wait_for(reader.readexactly(content_length or 0), timeout=5)
         parts = urlsplit(address)
@@ -260,11 +489,14 @@ class EgressGuard:
             f"Content-Length: {len(body)}".encode(),
             *forwarded,
         ]
+        payload = b"\r\n".join(lines) + b"\r\n\r\n" + body
         source, sink = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", FIXTURE_PORT), 3)
         try:
-            sink.write(b"\r\n".join(lines) + b"\r\n\r\n" + body)
+            if not self._charge_bytes(len(payload), upstream=True):
+                return
+            sink.write(payload)
             await sink.drain()
-            await self._pipe(source, writer)
+            await self._metered_pipe(source, writer, upstream=False)
         finally:
             sink.close()
             try:

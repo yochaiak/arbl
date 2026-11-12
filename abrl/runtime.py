@@ -18,6 +18,7 @@ from sqlalchemy.orm import aliased
 from abrl.browser import BrowserResult, execute_workflow
 from abrl.config import CLICKHOUSE_PASSWORD, CLICKHOUSE_URL, DISPATCH_SECONDS, LEASE_SECONDS, REDIS_URL
 from abrl.db import Attempt, Event, Run, Session, Target, Trial, WorkerHeartbeat, new_id, now, record
+from abrl.platform_models import BrowserProfile, BrowserSession, Project, SessionBatch
 from abrl.telemetry import configure_logging
 
 configure_logging()
@@ -27,7 +28,24 @@ trials_finished = Counter("abrl_trial_outcomes_total", "Logical trial outcomes",
 trial_time = Histogram("abrl_trial_duration_seconds", "Observed workflow duration")
 WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"
 
-broker = RedisBroker(url=REDIS_URL, namespace="abrl")
+if os.getenv("ABRL_REDIS_SENTINELS"):
+    from redis.sentinel import Sentinel
+
+    sentinels = [
+        (host.rsplit(":", 1)[0], int(host.rsplit(":", 1)[1]))
+        for host in os.environ["ABRL_REDIS_SENTINELS"].split(",")
+    ]
+    sentinel = Sentinel(
+        sentinels,
+        password=os.getenv("ABRL_REDIS_PASSWORD"),
+        socket_timeout=3,
+        sentinel_kwargs={"password": os.getenv("ABRL_REDIS_PASSWORD")},
+    )
+    broker = RedisBroker(
+        client=sentinel.master_for(os.getenv("ABRL_REDIS_MASTER", "abrl-master")), namespace="abrl"
+    )
+else:
+    broker = RedisBroker(url=REDIS_URL, namespace="abrl")
 broker.add_middleware(AsyncIO())
 dramatiq.set_broker(broker)
 
@@ -84,6 +102,10 @@ class Work:
 
 def claim(trial_id: str) -> Work | None:
     with Session.begin() as session:
+        from abrl.platform_service import ACTIVE
+        from abrl.session_runner import serialize_admission
+
+        serialize_admission(session)
         touch_worker(session)
         run, trial = lock_pair(session, trial_id)
         if not run or not trial or trial.status != "queued":
@@ -97,6 +119,42 @@ def claim(trial_id: str) -> Work | None:
         if active:
             trial.dispatched_at = None
             return None
+        if run.mode == "live":
+            reserved = or_(
+                BrowserSession.status.in_(ACTIVE),
+                BrowserSession.admitted.is_(True),
+                BrowserSession.id.in_(
+                    select(BrowserProfile.owner_session_id).where(
+                        BrowserProfile.status == "quarantined", BrowserProfile.owner_session_id.is_not(None)
+                    )
+                ),
+            )
+            new_count = session.scalar(select(func.count()).select_from(BrowserSession).where(reserved))
+            legacy_count = session.scalar(
+                select(func.count())
+                .select_from(Trial)
+                .join(Run)
+                .where(Trial.status == "running", Run.mode == "live")
+            )
+            project = session.get(Project, run.project_id)
+            project_count = session.scalar(
+                select(func.count())
+                .select_from(BrowserSession)
+                .where(reserved, BrowserSession.project_id == run.project_id)
+            )
+            target_count = session.scalar(
+                select(func.count())
+                .select_from(BrowserSession)
+                .join(SessionBatch)
+                .where(reserved, SessionBatch.config["target_id"].as_string() == run.target_id)
+            )
+            if (
+                new_count + legacy_count >= 500
+                or project_count >= (project.concurrency if project else 20)
+                or target_count >= run.target.get("concurrency", 1)
+            ):
+                trial.dispatched_at = None
+                return None
         if run.mode == "live":
             target = session.scalar(select(Target).where(Target.id == run.target_id).with_for_update())
             if (
@@ -225,6 +283,7 @@ async def run_trial(trial_id: str) -> None:
             result = await execute_workflow(
                 origin=work.target["origin"],
                 resource_origins=work.target["resource_origins"],
+                navigation_origins=work.target.get("navigation_origins", []),
                 steps=work.workflow["steps"],
                 cancel=cancelled,
                 timeout_seconds=60,

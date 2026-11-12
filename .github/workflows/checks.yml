@@ -13,7 +13,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -27,6 +27,8 @@ jobs:
         run: |
           make api > "${RUNNER_TEMP}/abrl-api.log" 2>&1 &
           make worker > "${RUNNER_TEMP}/abrl-worker.log" 2>&1 &
+          make scheduler > "${RUNNER_TEMP}/abrl-scheduler.log" 2>&1 &
+          make sessions > "${RUNNER_TEMP}/abrl-sessions.log" 2>&1 &
           curl --retry 20 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:8400/health
           make integration-test
       - name: Stop test infrastructure

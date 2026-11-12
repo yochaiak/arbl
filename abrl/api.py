@@ -6,7 +6,6 @@ import logging
 import secrets
 import socket
 import ssl
-from contextlib import asynccontextmanager, suppress
 from urllib.parse import urlsplit
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -14,11 +13,12 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, R
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 
 from abrl.artifacts import archive
+from abrl.auth import configure_auth
 from abrl.browser import browser_availability
-from abrl.config import API_ORIGIN, OPERATOR_TOKEN, WEB_ORIGIN
+from abrl.config import API_ORIGIN, CONTROLLED_ORIGIN, WEB_ORIGIN
 from abrl.db import (
     Event,
     ManualObservation,
@@ -32,11 +32,15 @@ from abrl.db import (
     WorkflowVersion,
     record,
 )
+from abrl.experiment_api import router as experiment_router
 from abrl.lab import diagnostics_status
 from abrl.lab import router as lab_router
+from abrl.list_queries import ordered, text_match
 from abrl.network import resolve_public_ipv4
+from abrl.observations import router as observation_router
+from abrl.platform_api import router as platform_router
 from abrl.reports import csv_export, html_export, pdf_export, report, run_view, trial_view
-from abrl.runtime import locked_run, relative_time, scheduler, settle_run
+from abrl.runtime import locked_run, relative_time, settle_run
 from abrl.schemas import (
     ReportView,
     RunInput,
@@ -47,6 +51,8 @@ from abrl.schemas import (
     WorkflowInput,
     WorkflowView,
 )
+from abrl.session_artifacts import router as artifact_router
+from abrl.session_template_api import router as template_router
 from abrl.telemetry import configure_logging, instrument
 
 configure_logging()
@@ -54,41 +60,30 @@ log = logging.getLogger("abrl.api")
 PROOF_PATH = "/.well-known/abrl-target.txt"
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    task = asyncio.create_task(scheduler())
-    try:
-        yield
-    finally:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-
-
-app = FastAPI(title="ABRL Workflow Lab", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="ABRL Workflow Lab", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted({WEB_ORIGIN, "http://127.0.0.1:8430", "http://localhost:8430"}),
     allow_methods=["GET", "POST", "PUT"],
-    allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
+    allow_credentials=True,
+    allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "X-Project-ID", "Idempotency-Key"],
+    expose_headers=["X-Total-Count"],
 )
 app.include_router(lab_router)
 
 
-def authenticate(authorization: str | None = Header(default=None)) -> None:
-    if not OPERATOR_TOKEN:
-        raise HTTPException(503, "Set ABRL_OPERATOR_TOKEN to enable operator access.")
-    prefix, _, token = (authorization or "").partition(" ")
-    if prefix.lower() != "bearer" or not hmac.compare_digest(token.encode(), OPERATOR_TOKEN.encode()):
-        raise HTTPException(401, "Invalid operator token.", headers={"WWW-Authenticate": "Bearer"})
+def authenticate(request: Request):
+    from abrl.access import authorize
+
+    return authorize(request, "operator" if request.method in ("POST", "PUT", "DELETE") else "viewer")
 
 
 api = APIRouter(prefix="/api/v1", dependencies=[Depends(authenticate)])
 
 
-def lookup(session, model, id):
+def lookup(session, model, id, project_id="default"):
     item = session.get(model, id)
-    if item is None:
+    if item is None or getattr(item, "project_id", "default") != project_id:
         raise HTTPException(404, "Record not found.")
     return item
 
@@ -101,7 +96,7 @@ def target_view(session, item: Target) -> dict:
         **config,
         "verified": item.verified_version == item.version,
     }
-    if config["origin"] != API_ORIGIN and not result["verified"]:
+    if not result["verified"]:
         result.update(proof_path=PROOF_PATH, proof_token=item.proof_token)
     return result
 
@@ -111,11 +106,19 @@ def workflow_view(session, item: Workflow) -> dict:
     return {"id": item.id, "version": item.version, **config}
 
 
-def add_target(session, data: TargetInput) -> Target:
+def locally_owned_origins(data: TargetInput) -> bool:
+    return all(
+        origin in (API_ORIGIN, CONTROLLED_ORIGIN)
+        for origin in [data.origin, *getattr(data, "navigation_origins", [])]
+    )
+
+
+def add_target(session, data: TargetInput, project_id="default") -> Target:
     item = Target(
+        project_id=project_id,
         version=1,
         proof_token=secrets.token_urlsafe(32),
-        verified_version=1 if data.origin == API_ORIGIN else 0,
+        verified_version=1 if locally_owned_origins(data) else 0,
     )
     session.add(item)
     session.flush()
@@ -125,8 +128,8 @@ def add_target(session, data: TargetInput) -> Target:
     return item
 
 
-def add_workflow(session, data: WorkflowInput) -> Workflow:
-    item = Workflow(version=1)
+def add_workflow(session, data: WorkflowInput, project_id="default") -> Workflow:
+    item = Workflow(version=1, project_id=project_id)
     session.add(item)
     session.flush()
     session.add(WorkflowVersion(workflow_id=item.id, version=1, config=data.model_dump()))
@@ -166,26 +169,51 @@ async def status():
 
 
 @api.get("/targets", response_model=list[TargetView])
-def targets():
+def targets(request: Request, response: Response,
+            limit: int = Query(500, ge=1, le=500), offset: int = Query(0, ge=0),
+            q: str | None = Query(None, max_length=100), mode: str | None = Query(None, max_length=32),
+            verified: bool | None = None, order: str = Query("newest", max_length=32)):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
-        return [target_view(session, item) for item in session.scalars(select(Target).order_by(Target.id))]
+        query = select(Target).join(TargetVersion, (TargetVersion.target_id == Target.id) & (TargetVersion.version == Target.version)).where(Target.project_id == project_id)
+        name = TargetVersion.config["name"].as_string()
+        if q:
+            query = query.where(or_(text_match(name, q), text_match(TargetVersion.config["origin"].as_string(), q)))
+        if mode:
+            query = query.where(TargetVersion.config["mode"].as_string() == mode)
+        if verified is not None:
+            query = query.where((Target.verified_version == Target.version) if verified else (Target.verified_version != Target.version))
+        query = ordered(query, order, {
+            "newest": (TargetVersion.created_at.desc(), Target.id.desc()),
+            "oldest": (TargetVersion.created_at.asc(), Target.id.asc()),
+            "name_asc": (name.asc(), Target.id.asc()), "name_desc": (name.desc(), Target.id.desc()),
+        })
+        response.headers["X-Total-Count"] = str(session.scalar(select(func.count()).select_from(query.order_by(None).subquery())))
+        return [
+            target_view(session, item)
+            for item in session.scalars(query.limit(limit).offset(offset))
+        ]
 
 
 @api.post("/targets", status_code=201, response_model=TargetView)
-def create_target(data: TargetInput):
+def create_target(request: Request, data: TargetInput):
+    project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
-        return target_view(session, add_target(session, data))
+        return target_view(session, add_target(session, data, project_id))
 
 
 @api.put("/targets/{target_id}", response_model=TargetView)
-def update_target(target_id: str, data: TargetInput):
+def update_target(request: Request, target_id: str, data: TargetInput):
+    project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
-        item = session.scalar(select(Target).where(Target.id == target_id).with_for_update())
+        item = session.scalar(
+            select(Target).where(Target.id == target_id, Target.project_id == project_id).with_for_update()
+        )
         if item is None:
             raise HTTPException(404, "Target not found.")
         item.version += 1
         item.proof_token = secrets.token_urlsafe(32)
-        item.verified_version = item.version if data.origin == API_ORIGIN else 0
+        item.verified_version = item.version if locally_owned_origins(data) else 0
         session.add(TargetVersion(target_id=item.id, version=item.version, config=data.model_dump()))
         record(session, "target_updated", target_id=item.id, version=item.version)
         session.flush()
@@ -193,9 +221,10 @@ def update_target(target_id: str, data: TargetInput):
 
 
 @api.get("/targets/{target_id}/versions")
-def target_versions(target_id: str):
+def target_versions(request: Request, target_id: str):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
-        lookup(session, Target, target_id)
+        lookup(session, Target, target_id, project_id)
         return [
             {"version": v.version, "created_at": v.created_at, **v.config}
             for v in session.scalars(
@@ -233,24 +262,33 @@ def fetch_proof(hostname: str, address: str) -> bytes:
 
 
 @api.post("/targets/{target_id}/verify", response_model=TargetView)
-async def verify_target(target_id: str):
+async def verify_target(request: Request, target_id: str):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
-        item = lookup(session, Target, target_id)
+        item = lookup(session, Target, target_id, project_id)
         config = target_view(session, item)
         if config["verified"]:
             return config
-        hostname = urlsplit(config["origin"]).hostname
+        origins = {config["origin"], *config.get("navigation_origins", [])}
         token = item.proof_token
         version = item.version
-    try:
-        addresses = await asyncio.wait_for(resolve_public_ipv4(hostname), timeout=6)
-        marker = await asyncio.wait_for(asyncio.to_thread(fetch_proof, hostname, addresses[0]), timeout=8)
-    except (ValueError, OSError, http.client.HTTPException, TimeoutError, IndexError):
-        raise HTTPException(422, "Could not read the ownership marker over HTTPS.")
-    if not hmac.compare_digest(marker, token.encode()):
-        raise HTTPException(422, "Ownership marker did not match the supplied token.")
+    for origin in sorted(origins):
+        if origin in (API_ORIGIN, CONTROLLED_ORIGIN):
+            continue
+        hostname = urlsplit(origin).hostname
+        try:
+            addresses = await asyncio.wait_for(resolve_public_ipv4(hostname), timeout=6)
+            marker = await asyncio.wait_for(
+                asyncio.to_thread(fetch_proof, hostname, addresses[0]), timeout=8
+            )
+        except (ValueError, OSError, http.client.HTTPException, TimeoutError, IndexError):
+            raise HTTPException(422, f"Could not read the ownership marker over HTTPS at {origin}.")
+        if not hmac.compare_digest(marker, token.encode()):
+            raise HTTPException(422, f"Ownership marker did not match at {origin}.")
     with Session.begin() as session:
-        item = session.scalar(select(Target).where(Target.id == target_id).with_for_update())
+        item = session.scalar(
+            select(Target).where(Target.id == target_id, Target.project_id == project_id).with_for_update()
+        )
         if item.version != version:
             raise HTTPException(409, "The target changed. Verify its current version.")
         item.verified_version = version
@@ -259,23 +297,43 @@ async def verify_target(target_id: str):
 
 
 @api.get("/workflows", response_model=list[WorkflowView])
-def workflows():
+def workflows(request: Request, response: Response,
+              limit: int = Query(500, ge=1, le=500), offset: int = Query(0, ge=0),
+              q: str | None = Query(None, max_length=100), order: str = Query("newest", max_length=32)):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
+        query = select(Workflow).join(WorkflowVersion, (WorkflowVersion.workflow_id == Workflow.id) & (WorkflowVersion.version == Workflow.version)).where(Workflow.project_id == project_id)
+        name = WorkflowVersion.config["name"].as_string()
+        if q:
+            query = query.where(text_match(name, q))
+        query = ordered(query, order, {
+            "newest": (WorkflowVersion.created_at.desc(), Workflow.id.desc()),
+            "oldest": (WorkflowVersion.created_at.asc(), Workflow.id.asc()),
+            "name_asc": (name.asc(), Workflow.id.asc()), "name_desc": (name.desc(), Workflow.id.desc()),
+        })
+        response.headers["X-Total-Count"] = str(session.scalar(select(func.count()).select_from(query.order_by(None).subquery())))
         return [
-            workflow_view(session, item) for item in session.scalars(select(Workflow).order_by(Workflow.id))
+            workflow_view(session, item)
+            for item in session.scalars(query.limit(limit).offset(offset))
         ]
 
 
 @api.post("/workflows", status_code=201, response_model=WorkflowView)
-def create_workflow(data: WorkflowInput):
+def create_workflow(request: Request, data: WorkflowInput):
+    project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
-        return workflow_view(session, add_workflow(session, data))
+        return workflow_view(session, add_workflow(session, data, project_id))
 
 
 @api.put("/workflows/{workflow_id}", response_model=WorkflowView)
-def update_workflow(workflow_id: str, data: WorkflowInput):
+def update_workflow(request: Request, workflow_id: str, data: WorkflowInput):
+    project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
-        item = session.scalar(select(Workflow).where(Workflow.id == workflow_id).with_for_update())
+        item = session.scalar(
+            select(Workflow)
+            .where(Workflow.id == workflow_id, Workflow.project_id == project_id)
+            .with_for_update()
+        )
         if item is None:
             raise HTTPException(404, "Workflow not found.")
         item.version += 1
@@ -286,9 +344,10 @@ def update_workflow(workflow_id: str, data: WorkflowInput):
 
 
 @api.get("/workflows/{workflow_id}/versions")
-def workflow_versions(workflow_id: str):
+def workflow_versions(request: Request, workflow_id: str):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
-        lookup(session, Workflow, workflow_id)
+        lookup(session, Workflow, workflow_id, project_id)
         return [
             {"version": v.version, "created_at": v.created_at, **v.config}
             for v in session.scalars(
@@ -300,25 +359,35 @@ def workflow_versions(workflow_id: str):
 
 
 @api.post("/starter")
-def starter():
+def starter(request: Request):
+    project_id = request.headers.get("x-project-id", "default")
     from abrl.starter import seed_starter
 
+    if project_id != "default":
+        raise HTTPException(
+            409, "Starter fixtures belong to the default project; create site-specific workflows here"
+        )
     return seed_starter()
 
 
 @api.get("/runs", response_model=list[RunView])
-def runs():
+def runs(request: Request):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
         return [
-            run_view(run) for run in session.scalars(select(Run).order_by(Run.created_at.desc()).limit(100))
+            run_view(run)
+            for run in session.scalars(
+                select(Run).where(Run.project_id == project_id).order_by(Run.created_at.desc()).limit(100)
+            )
         ]
 
 
 @api.post("/runs", status_code=201, response_model=RunView)
-def create_run(data: RunInput):
+def create_run(request: Request, data: RunInput):
+    project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
-        target = lookup(session, Target, data.target_id)
-        workflow = lookup(session, Workflow, data.workflow_id)
+        target = lookup(session, Target, data.target_id, project_id)
+        workflow = lookup(session, Workflow, data.workflow_id, project_id)
         if data.mode == "live" and target.verified_version != target.version:
             raise HTTPException(409, "Verify the current target before launching browser trials.")
         count = session.scalar(
@@ -330,6 +399,7 @@ def create_run(data: RunInput):
             raise HTTPException(429, "Finish or cancel pending runs before starting another.")
         repetitions = data.repetitions or (300 if data.phase == "confirmation" else 30)
         run = Run(
+            project_id=project_id,
             target_id=target.id,
             workflow_id=workflow.id,
             target_version=target.version,
@@ -351,9 +421,10 @@ def create_run(data: RunInput):
 
 
 @api.get("/runs/{run_id}/trials", response_model=list[TrialView])
-def trials(run_id: str):
+def trials(request: Request, run_id: str):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
-        lookup(session, Run, run_id)
+        lookup(session, Run, run_id, project_id)
         return [
             trial_view(item)
             for item in session.scalars(select(Trial).where(Trial.run_id == run_id).order_by(Trial.ordinal))
@@ -361,15 +432,17 @@ def trials(run_id: str):
 
 
 @api.get("/runs/{run_id}/report", response_model=ReportView)
-def get_report(run_id: str):
+def get_report(request: Request, run_id: str):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
-        return report(session, lookup(session, Run, run_id))
+        return report(session, lookup(session, Run, run_id, project_id))
 
 
 @api.post("/runs/{run_id}/archive")
-def archive_report(run_id: str):
+def archive_report(request: Request, run_id: str):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
-        run = lookup(session, Run, run_id)
+        run = lookup(session, Run, run_id, project_id)
         if run.status not in ("completed", "blocked", "cancelled"):
             raise HTTPException(409, "Only finished runs can be archived.")
         data = report(session, run)
@@ -384,9 +457,12 @@ def archive_report(run_id: str):
 
 
 @api.get("/runs/{run_id}/export")
-def export(run_id: str, format: str = Query(pattern="^(json|csv|html|pdf)$", default="json")):
+def export(
+    request: Request, run_id: str, format: str = Query(pattern="^(json|csv|html|pdf)$", default="json")
+):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
-        data = report(session, lookup(session, Run, run_id))
+        data = report(session, lookup(session, Run, run_id, project_id))
     writer, media_type = {
         "csv": (csv_export, "text/csv"),
         "html": (html_export, "text/html"),
@@ -404,10 +480,11 @@ def export(run_id: str, format: str = Query(pattern="^(json|csv|html|pdf)$", def
 
 
 @api.post("/runs/{run_id}/pause")
-def pause(run_id: str):
+def pause(request: Request, run_id: str):
+    project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
         run = locked_run(session, run_id)
-        if run is None:
+        if run is None or run.project_id != project_id:
             raise HTTPException(404, "Run not found.")
         if run.status not in ("queued", "running"):
             raise HTTPException(409, "Only active runs can be paused.")
@@ -417,10 +494,11 @@ def pause(run_id: str):
 
 
 @api.post("/runs/{run_id}/resume")
-def resume(run_id: str):
+def resume(request: Request, run_id: str):
+    project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
         run = locked_run(session, run_id)
-        if run is None:
+        if run is None or run.project_id != project_id:
             raise HTTPException(404, "Run not found.")
         if run.status != "paused":
             raise HTTPException(409, "Only paused runs can be resumed.")
@@ -433,10 +511,11 @@ def resume(run_id: str):
 
 
 @api.post("/runs/{run_id}/cancel")
-def cancel(run_id: str):
+def cancel(request: Request, run_id: str):
+    project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
         run = locked_run(session, run_id)
-        if run is None:
+        if run is None or run.project_id != project_id:
             raise HTTPException(404, "Run not found.")
         if run.status not in ("queued", "running", "paused", "cancelling"):
             raise HTTPException(409, "Run already ended.")
@@ -462,8 +541,9 @@ async def events(
     after: int = Query(default=0, ge=0),
     last_event_id: str | None = Header(default=None),
 ):
+    project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
-        lookup(session, Run, run_id)
+        lookup(session, Run, run_id, project_id)
     if last_event_id and last_event_id.isascii() and last_event_id.isdecimal() and len(last_event_id) < 16:
         after = max(after, int(last_event_id))
 
@@ -494,7 +574,10 @@ async def events(
 
 
 @api.get("/diagnostics")
-def diagnostics():
+def diagnostics(request: Request):
+    project_id = request.headers.get("x-project-id", "default")
+    if project_id != "default":
+        return []
     with Session() as session:
         return [
             {
@@ -512,5 +595,14 @@ def diagnostics():
 
 
 app.include_router(api)
+
+app.include_router(platform_router)
+app.include_router(experiment_router)
+app.include_router(artifact_router)
+app.include_router(template_router)
+
+app.include_router(observation_router)
+
+configure_auth(app)
 
 instrument(app)

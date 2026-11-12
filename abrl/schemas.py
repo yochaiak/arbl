@@ -14,17 +14,30 @@ class Input(BaseModel):
 class TargetInput(Input):
     name: str = Field(min_length=1, max_length=100)
     origin: str = Field(max_length=256)
+    navigation_origins: list[str] = Field(default_factory=list, max_length=20)
     resource_origins: list[str] = Field(default_factory=list, max_length=20)
     mode: Literal["browser_only", "instrumented"] = "browser_only"
-    rate_limit: int = Field(default=30, ge=1, le=60)
+    concurrency: int = Field(default=1, ge=1, le=500)
+    adscore_zone_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$")
+    adscore_zone_key: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,128}$")
+    acceptance_gate: Literal["verified_clean", "observe_only"] = "verified_clean"
+    rate_limit: int = Field(default=30, ge=1, le=6000)
     session_policy: Literal["fresh", "repeat_within_trial"] = "fresh"
     authorized: Literal[True]
 
     @model_validator(mode="after")
     def origins(self):
         self.origin = normalize_origin(self.origin)
+        self.navigation_origins = sorted(
+            {normalize_origin(value) for value in self.navigation_origins} - {self.origin}
+        )
+        if any(urlsplit(value).scheme != "https" for value in self.navigation_origins):
+            raise ValueError("Additional navigation origins must use HTTPS")
+        if self.mode == "instrumented":
+            self.resource_origins = list({*self.resource_origins, "https://c.adsco.re"})
         self.resource_origins = sorted(
-            {normalize_origin(value) for value in self.resource_origins} - {self.origin}
+            {normalize_origin(value) for value in self.resource_origins}
+            - {self.origin, *self.navigation_origins}
         )
         if any(urlsplit(value).scheme != "https" for value in self.resource_origins):
             raise ValueError("Additional resource origins must use HTTPS")
@@ -32,8 +45,19 @@ class TargetInput(Input):
 
 
 Action = Literal[
-    "navigate", "click", "fill", "select", "extract", "wait_for", "assert_visible", "assert_text"
+    "navigate",
+    "click",
+    "fill",
+    "select",
+    "extract",
+    "wait_for",
+    "assert_visible",
+    "assert_text",
+    "assert_not_visible",
+    "checkpoint",
 ]
+
+ASSERTIONS = {"assert_visible", "assert_text", "assert_not_visible"}
 
 
 class Step(Input):
@@ -42,17 +66,35 @@ class Step(Input):
     selector: str | None = Field(default=None, min_length=1, max_length=512)
     value: str | None = Field(default=None, max_length=1000)
     secret_ref: str | None = Field(default=None, pattern=r"^[A-Za-z][A-Za-z0-9_]{0,47}$")
+    name: str | None = Field(default=None, pattern=r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
     timeout_ms: int = Field(default=5000, ge=100, le=15000)
 
     @model_validator(mode="after")
     def fields(self):
+        if self.action == "checkpoint":
+            if not self.name:
+                raise ValueError("Checkpoint requires a name")
+            if any(value is not None for value in (self.url, self.selector, self.value, self.secret_ref)):
+                raise ValueError(
+                    "Checkpoint records an assertion boundary and does not accept page actions"
+                )
+            return self
+        if self.name is not None:
+            raise ValueError("Only checkpoint accepts a name")
         if self.action == "navigate":
-            if not self.url or not self.url.startswith("/") or self.url.startswith("//"):
-                raise ValueError("Navigate requires a site-relative path")
+            if not self.url:
+                raise ValueError("Navigate requires a site-relative path or an approved HTTPS URL")
+            absolute = urlsplit(self.url)
+            if absolute.scheme or absolute.netloc:
+                if absolute.scheme != "https":
+                    raise ValueError("Navigate requires a site-relative path or an approved HTTPS URL")
+                normalize_origin(f"{absolute.scheme}://{absolute.netloc}")
+            elif not self.url.startswith("/") or self.url.startswith("//"):
+                raise ValueError("Navigate requires a site-relative path or an approved HTTPS URL")
             if (
                 "\\" in self.url
                 or re.search(r"[\x00-\x20]", self.url)
-                or self.url.startswith("/.well-known/")
+                or absolute.path.startswith("/.well-known/")
             ):
                 raise ValueError("Invalid navigation path")
             if self.selector is not None:
@@ -80,8 +122,17 @@ class WorkflowInput(Input):
     def required_steps(self):
         if self.steps[0].action != "navigate":
             raise ValueError("Begin the workflow with Navigate")
-        if self.steps[-1].action not in ("assert_visible", "assert_text"):
+        if self.steps[-1].action not in ASSERTIONS:
             raise ValueError("Finish with an explicit success assertion")
+        names = set()
+        for index, step in enumerate(self.steps):
+            if step.action != "checkpoint":
+                continue
+            if index == 0 or self.steps[index - 1].action not in ASSERTIONS:
+                raise ValueError("Place each checkpoint immediately after an explicit assertion")
+            if step.name in names:
+                raise ValueError("Checkpoint names must be unique within a workflow")
+            names.add(step.name)
         return self
 
 

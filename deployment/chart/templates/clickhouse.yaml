@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: abrl-clickhouse}
+data:
+  config.xml: |
+    <clickhouse>
+      <listen_host>0.0.0.0</listen_host>
+      <logger><level>warning</level><console>true</console></logger>
+      <prometheus><endpoint>/metrics</endpoint><port>9363</port><metrics>true</metrics><events>true</events><asynchronous_metrics>true</asynchronous_metrics></prometheus>
+      <remote_servers><abrl><shard><internal_replication>true</internal_replication>
+        <replica><host>abrl-clickhouse-0.abrl-clickhouse-headless</host><port>9000</port><user>abrl</user><password from_env="CLICKHOUSE_PASSWORD"/></replica>
+        <replica><host>abrl-clickhouse-1.abrl-clickhouse-headless</host><port>9000</port><user>abrl</user><password from_env="CLICKHOUSE_PASSWORD"/></replica>
+        <replica><host>abrl-clickhouse-2.abrl-clickhouse-headless</host><port>9000</port><user>abrl</user><password from_env="CLICKHOUSE_PASSWORD"/></replica>
+      </shard></abrl></remote_servers>
+      <zookeeper>
+        <node><host>abrl-keeper-0.abrl-keeper</host><port>9181</port></node>
+        <node><host>abrl-keeper-1.abrl-keeper</host><port>9181</port></node>
+        <node><host>abrl-keeper-2.abrl-keeper</host><port>9181</port></node>
+      </zookeeper>
+      <macros><shard>01</shard><replica from_env="HOSTNAME"/></macros>
+    </clickhouse>
+  init.sql: |
+    CREATE DATABASE IF NOT EXISTS abrl;
+    CREATE TABLE IF NOT EXISTS abrl.events (
+      sequence UInt64, run_id String, kind LowCardinality(String), detail String, occurred_at String
+    ) ENGINE = ReplicatedReplacingMergeTree('/abrl/tables/{shard}/events', '{replica}') ORDER BY sequence;
+  keeper.xml: |
+    <clickhouse>
+      <listen_host>0.0.0.0</listen_host>
+      <logger><level>warning</level><console>true</console></logger>
+      <keeper_server>
+        <tcp_port>9181</tcp_port><server_id from_env="KEEPER_ID"/>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings><operation_timeout_ms>10000</operation_timeout_ms><session_timeout_ms>30000</session_timeout_ms></coordination_settings>
+        <raft_configuration>
+          <server><id>1</id><hostname>abrl-keeper-0.abrl-keeper</hostname><port>9234</port></server>
+          <server><id>2</id><hostname>abrl-keeper-1.abrl-keeper</hostname><port>9234</port></server>
+          <server><id>3</id><hostname>abrl-keeper-2.abrl-keeper</hostname><port>9234</port></server>
+        </raft_configuration>
+      </keeper_server>
+    </clickhouse>
+---
+apiVersion: v1
+kind: Service
+metadata: {name: abrl-keeper}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector: {app: abrl-keeper}
+  ports: [{name: client, port: 9181}, {name: raft, port: 9234}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: abrl-clickhouse-headless}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector: {app: abrl-clickhouse}
+  ports: [{name: native, port: 9000}, {name: replication, port: 9009}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: abrl-clickhouse}
+spec:
+  selector: {app: abrl-clickhouse}
+  ports: [{name: http, port: 8123}]
+---
+{{- range $kind := list "keeper" "clickhouse" }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: abrl-{{ $kind }}}
+spec:
+  serviceName: {{ if eq $kind "keeper" }}abrl-keeper{{ else }}abrl-clickhouse-headless{{ end }}
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector: {matchLabels: {app: abrl-{{ $kind }}}}
+  template:
+    metadata: {labels: {app: abrl-{{ $kind }}, abrl.io/role: data}}
+    spec:
+      {{- include "abrl.dataNode" $ | nindent 6 }}
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {app: abrl-{{ $kind }}}}
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: {{ $kind }}
+          {{- if eq $kind "keeper" }}
+          image: {{ $.Values.clickhouse.keeperImage }}
+          command: [sh, -ec, 'export KEEPER_ID=$(( ${HOSTNAME##*-} + 1 )); exec clickhouse-keeper --config-file=/config/keeper.xml']
+          ports: [{name: client, containerPort: 9181}, {name: raft, containerPort: 9234}]
+          readinessProbe: {tcpSocket: {port: client}, initialDelaySeconds: 10}
+          resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+          volumeMounts: [{name: data, mountPath: /var/lib/clickhouse}, {name: config, mountPath: /config}]
+          {{- else }}
+          image: {{ $.Values.clickhouse.image }}
+          env:
+            - {name: CLICKHOUSE_USER, value: abrl}
+            - {name: CLICKHOUSE_PASSWORD, valueFrom: {secretKeyRef: {name: abrl-data, key: clickhouse-password}}}
+            - {name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT, value: "1"}
+          ports: [{name: metrics, containerPort: 9363}, {name: http, containerPort: 8123}, {name: native, containerPort: 9000}, {name: replication, containerPort: 9009}]
+          readinessProbe: {httpGet: {path: /ping, port: http}, initialDelaySeconds: 20}
+          resources: {requests: {cpu: "1", memory: 2Gi}, limits: {cpu: "4", memory: 8Gi}}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/clickhouse}
+            - {name: config, mountPath: /etc/clickhouse-server/config.d/abrl.xml, subPath: config.xml}
+            - {name: config, mountPath: /docker-entrypoint-initdb.d/abrl.sql, subPath: init.sql}
+          {{- end }}
+      volumes: [{name: config, configMap: {name: abrl-clickhouse}}]
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: {{ $.Values.storageClass }}
+        resources: {requests: {storage: {{ if eq $kind "keeper" }}10Gi{{ else }}{{ $.Values.clickhouse.size }}{{ end }}}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: abrl-{{ $kind }}}
+spec: {minAvailable: 2, selector: {matchLabels: {app: abrl-{{ $kind }}}}}
+---
+{{- end }}

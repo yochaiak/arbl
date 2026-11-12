@@ -1,0 +1,102 @@
+{{- if .Values.autoscaler.enabled }}
+{{- if gt (add .Values.autoscaler.standard.max .Values.autoscaler.vendor.max) 80 }}{{ fail "Combined autoscaler pools exceed hard 80-node ceiling" }}{{ end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: abrl-autoscaler}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: abrl-autoscaler}
+rules:
+  - apiGroups: [""]
+    resources: [events, endpoints]
+    verbs: [create, patch, update]
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [pods/status]
+    verbs: [update]
+  - apiGroups: [""]
+    resources: [endpoints]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [watch, list, get, update, patch]
+  - apiGroups: [""]
+    resources: [namespaces, pods, services, replicationcontrollers, persistentvolumeclaims, persistentvolumes]
+    verbs: [watch, list, get]
+  - apiGroups: [apps]
+    resources: [daemonsets, replicasets, statefulsets]
+    verbs: [watch, list, get]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [watch, list, get]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses, csinodes, csidrivers, csistoragecapacities, volumeattachments]
+    verbs: [watch, list, get]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [watch, list, get]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create, get, list, watch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: abrl-autoscaler}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: abrl-autoscaler}
+subjects: [{kind: ServiceAccount, name: abrl-autoscaler, namespace: {{ .Release.Namespace }}}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: abrl-autoscaler}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [create, list, watch, get, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: abrl-autoscaler}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: abrl-autoscaler}
+subjects: [{kind: ServiceAccount, name: abrl-autoscaler, namespace: {{ .Release.Namespace }}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: abrl-autoscaler}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: abrl-autoscaler}}
+  template:
+    metadata: {labels: {app: abrl-autoscaler, abrl.io/role: control}}
+    spec:
+      {{- include "abrl.applicationNode" . | nindent 6 }}
+      {{- include "abrl.spread" "abrl-autoscaler" | nindent 6 }}
+      serviceAccountName: abrl-autoscaler
+      containers:
+        - name: autoscaler
+          image: {{ .Values.autoscaler.image }}
+          command:
+            - /cluster-autoscaler
+            - --cloud-provider=hetzner
+            - --namespace={{ .Release.Namespace }}
+            - --leader-elect=true
+            - --leader-elect-resource-lock=leases
+            - --nodes={{ .Values.autoscaler.standard.min }}:{{ .Values.autoscaler.standard.max }}:{{ .Values.autoscaler.standard.type }}:{{ .Values.autoscaler.standard.location }}:standard
+            - --nodes={{ .Values.autoscaler.vendor.min }}:{{ .Values.autoscaler.vendor.max }}:{{ .Values.autoscaler.vendor.type }}:{{ .Values.autoscaler.vendor.location }}:vendor
+            - --max-nodes-total=88
+            - --scale-down-delay-after-add=15m
+            - --scale-down-unneeded-time=15m
+            - --skip-nodes-with-local-storage=false
+            - --skip-nodes-with-system-pods=true
+            - --max-graceful-termination-sec=180
+            - --v=2
+          env:
+            - {name: HCLOUD_TOKEN, valueFrom: {secretKeyRef: {name: abrl-hcloud, key: token}}}
+            - {name: HCLOUD_NETWORK, value: {{ required "autoscaler.networkId required" .Values.autoscaler.networkId | quote }}}
+            - {name: HCLOUD_CLUSTER_CONFIG_FILE, value: /etc/autoscaler/config.json}
+          resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+          volumeMounts: [{name: config, mountPath: /etc/autoscaler, readOnly: true}]
+      volumes: [{name: config, secret: {secretName: abrl-autoscaler-config}}]
+{{- end }}

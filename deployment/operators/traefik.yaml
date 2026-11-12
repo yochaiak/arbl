@@ -1,0 +1,28 @@
+deployment:
+  replicas: 2
+nodeSelector:
+  abrl.io/role: app
+service:
+  spec:
+    type: NodePort
+ports:
+  web:
+    nodePort: 30080
+    proxyProtocol:
+      trustedIPs: [10.20.0.40/32]
+    http:
+      redirections:
+        entryPoint: {to: websecure, scheme: https, permanent: true}
+  websecure:
+    nodePort: 30443
+    proxyProtocol:
+      trustedIPs: [10.20.0.40/32]
+providers:
+  kubernetesIngress: {enabled: true}
+log:
+  level: WARN
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector: {matchLabels: {app.kubernetes.io/name: traefik}}

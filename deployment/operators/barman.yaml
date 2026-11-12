@@ -1,0 +1,7 @@
+replicaCount: 2
+nodeSelector: {abrl.io/role: app}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector: {matchLabels: {app.kubernetes.io/name: plugin-barman-cloud}}

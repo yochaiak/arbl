@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: configure setup infra migrate dev api worker web verifier test lint typecheck seed-demo integration-test build down
+.PHONY: configure setup infra migrate dev api worker scheduler sessions sessions-vendor web verifier test lint typecheck seed-demo integration-test migration-test profile-test build down
 
 configure:
 	@python3 scripts/configure.py
@@ -20,10 +20,19 @@ dev: infra migrate
 	@bash scripts/dev.sh
 
 api:
-	uv run uvicorn abrl.api:app --host 127.0.0.1 --port 8400 --no-proxy-headers
+	uv run uvicorn abrl.api:app --host 127.0.0.1 --port 8400 --no-proxy-headers --no-access-log
 
 worker:
 	uv run dramatiq abrl.runtime --processes 1 --threads 1
+
+scheduler:
+	uv run python -m abrl.scheduler_service
+
+sessions-vendor:
+	uv run python -m abrl.session_runner --pool vendor
+
+sessions:
+	uv run python -m abrl.session_runner
 
 web:
 	pnpm --dir apps/web dev
@@ -47,6 +56,12 @@ seed-demo:
 
 integration-test:
 	uv run python -m pytest -m integration
+
+migration-test:
+	PYTHONPATH=. uv run python scripts/check-migrations.py
+
+profile-test:
+	PYTHONPATH=. uv run python scripts/check-profile-roundtrip.py
 
 build:
 	pnpm --dir apps/web build

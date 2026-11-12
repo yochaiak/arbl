@@ -1,5 +1,6 @@
 from alembic import context
 
+import abrl.platform_models  # noqa: F401
 from abrl.db import Base, engine
 
 if context.is_offline_mode():

@@ -1,0 +1,86 @@
+{{- if .Values.cloudWorkers.enabled }}
+{{- if not .Values.cloudWorkers.isolationAttestation }}
+{{- fail "cloudWorkers.enabled requires isolationAttestation: evidence path for externally isolated browser/broker tests" }}
+{{- end }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata: {name: abrl-postgres-scaler}
+spec:
+  secretTargetRef:
+    - {parameter: connection, name: abrl-scaler-db, key: connection}
+---
+{{- range $pool, $resources := .Values.cloudWorkers.pools }}
+{{- if or (eq $pool "standard") $.Values.cloudWorkers.vendorEnabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledJob
+metadata: {name: abrl-session-{{ $pool }}}
+spec:
+  pollingInterval: 5
+  maxReplicaCount: {{ if eq $pool "standard" }}{{ $.Values.cloudWorkers.standardMax }}{{ else }}{{ $.Values.cloudWorkers.vendorMax }}{{ end }}
+  successfulJobsHistoryLimit: 20
+  failedJobsHistoryLimit: 50
+  rollout: {strategy: gradual}
+  scalingStrategy: {strategy: accurate}
+  jobTargetRef:
+    parallelism: 1
+    completions: 1
+    backoffLimit: 0
+    activeDeadlineSeconds: {{ $.Values.cloudWorkers.activeDeadlineSeconds }}
+    ttlSecondsAfterFinished: 86400
+    template:
+      metadata:
+        labels: {app: abrl-session, abrl.io/role: runner, abrl.io/pool: {{ $pool }}}
+        annotations:
+          cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+      spec:
+        restartPolicy: Never
+        serviceAccountName: abrl-session-controller
+        imagePullSecrets: {{ toJson $.Values.imagePullSecrets }}
+        automountServiceAccountToken: true
+        nodeSelector: {abrl.io/pool: {{ $pool }}, kubernetes.io/arch: amd64}
+        tolerations: [{key: abrl.io/browser, operator: Equal, value: "true", effect: NoSchedule}]
+        terminationGracePeriodSeconds: 120
+        securityContext:
+          {{- include "abrl.podSecurity" $ | nindent 10 }}
+        containers:
+          - name: session
+            image: {{ include "abrl.image" $.Values.image }}
+            command: [python, -m, abrl.session_runner, --once, --pool, {{ $pool }}]
+            envFrom: [{secretRef: {name: {{ $.Values.runtimeSecret }}}}]
+            env:
+              - {name: ABRL_DEPLOYMENT, value: cloud}
+              - {name: ABRL_ENVIRONMENT, value: cloud}
+              - {name: ABRL_BROWSER_IMAGE, value: {{ $.Values.cloudWorkers.browserImage | quote }}}
+              - {name: ABRL_BROWSER_IMAGE_MANUAL_CHROME, value: {{ $.Values.cloudWorkers.manualImage | quote }}}
+              - {name: ABRL_CLOAK_BROWSER_IMAGE, value: {{ $.Values.cloudWorkers.cloakImage | quote }}}
+              - {name: ABRL_KAMELEO_BROWSER_IMAGE, value: {{ $.Values.cloudWorkers.kameleoImage | quote }}}
+              - {name: ABRL_KAMELEO_ENGINE_IMAGE, value: {{ $.Values.cloudWorkers.kameleoEngineImage | quote }}}
+              - {name: ABRL_KAMELEO_CONTROL_ORIGINS_JSON, value: {{ toJson $.Values.cloudWorkers.kameleoControlOrigins | quote }}}
+              - {name: ABRL_IMAGE_PULL_SECRETS, value: {{ toJson $.Values.imagePullSecrets | quote }}}
+              - {name: ABRL_RUNTIME_NAMESPACE, value: {{ $.Release.Namespace | quote }}}
+              - {name: ABRL_POD_NAME, valueFrom: {fieldRef: {fieldPath: metadata.name}}}
+              - {name: ABRL_NODE_NAME, valueFrom: {fieldRef: {fieldPath: spec.nodeName}}}
+              - {name: ABRL_CLOUD_ISOLATION_ATTESTATION, value: {{ $.Values.cloudWorkers.isolationAttestation | quote }}}
+              - {name: ABRL_REDIS_SENTINELS, value: "abrl-redis-0.abrl-redis:26379,abrl-redis-1.abrl-redis:26379,abrl-redis-2.abrl-redis:26379"}
+              - {name: ABRL_REDIS_MASTER, value: abrl-master}
+            resources:
+              requests: {cpu: 250m, memory: 512Mi}
+              limits: {cpu: "1", memory: 1Gi}
+            securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+            volumeMounts: [{name: runtime, mountPath: /app/.abrl}, {name: tmp, mountPath: /tmp}, {name: shm, mountPath: /dev/shm}]
+        volumes:
+          - {name: runtime, emptyDir: {sizeLimit: 20Gi}}
+          - {name: tmp, emptyDir: {sizeLimit: 4Gi}}
+          - {name: shm, emptyDir: {medium: Memory, sizeLimit: 1Gi}}
+  triggers:
+    - type: postgresql
+      metadata:
+        query: "SELECT COUNT(*) FROM browser_sessions WHERE status = 'queued' AND admitted = true AND pool = '{{ $pool }}'"
+        targetQueryValue: "1"
+        activationTargetQueryValue: "0"
+      authenticationRef: {name: abrl-postgres-scaler}
+---
+{{- end }}
+{{- end }}
+
+{{- end }}

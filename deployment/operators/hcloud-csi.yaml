@@ -1,0 +1,7 @@
+controller:
+  replicaCount: 2
+  nodeSelector: {abrl.io/role: app}
+node:
+  tolerations:
+    - {operator: Exists, effect: NoSchedule}
+    - {operator: Exists, effect: NoExecute}

@@ -43,6 +43,16 @@ def test_resource_origin_is_read_only_and_cannot_host_a_document():
     assert execution.permits("https://site.example/form", document=True, method="POST")
 
 
+def test_explicit_navigation_origin_allows_documents_and_actions_but_resources_do_not():
+    execution = browser.Execution(
+        "https://site.example", {"https://assets.example"}, navigation_origins={"https://checkout.example"}
+    )
+    assert execution.permits("https://checkout.example/confirm", document=True, method="GET")
+    assert execution.permits("https://checkout.example/submit", document=True, method="POST")
+    assert not execution.permits("https://assets.example/submit", document=True, method="POST")
+    assert not execution.permits("https://unregistered.example/submit", document=True, method="POST")
+
+
 async def test_dns_rejects_mixed_public_and_private_answers(monkeypatch):
     async def records(*_args, **_kwargs):
         return [
@@ -92,6 +102,20 @@ async def fixture(monkeypatch):
                     'socket.onclose = () => {document.querySelector("#state").textContent = "Closed";};'
                     "</script>"
                 )
+            if path.startswith("/lab?profile="):
+                marker = path.split("=", 1)[1]
+                response = (
+                    '<p id="state"></p><script>'
+                    + (f'localStorage.setItem("marker", "{marker}");' if marker != "read" else "")
+                    + 'document.querySelector("#state").textContent = localStorage.getItem("marker") || "empty";'
+                    + "</script>"
+                )
+            if path == "/lab?console":
+                response += "<script>console.log('private-filled-value');</script>"
+            if path == "/lab?large":
+                response = "<p id='large'>" + "x" * 10000 + "</p>"
+            if path == "/lab?redirect":
+                status, headers = "302 Found", "Location: /lab/form\r\n"
             if path == "/lab/finish":
                 status, headers = "302 Found", "Location: /lab/manual\r\n"
             if path == "/lab/next":
@@ -167,6 +191,119 @@ def chromium():
 
 async def never_cancel():
     return False
+
+
+async def test_policy_cdp_session_never_sends_proxy_credentials_to_server_challenges():
+    from types import SimpleNamespace
+
+    handlers, sent = {}, []
+
+    async def ignore(*args, **kwargs):
+        return None
+
+    async def send(method, payload):
+        sent.append((method, payload))
+
+    session = SimpleNamespace(on=lambda event, callback: handlers.update({event: callback}), send=send)
+    context = SimpleNamespace(route=ignore, route_web_socket=ignore)
+    page = SimpleNamespace(on=lambda *_args: None)
+    execution = browser.Execution("https://site.example", set())
+    await browser._attach_page_policy(
+        context, page, session, execution, proxy_auth={"username": "test-session", "password": "test-lease"}
+    )
+    assert sent[-1][1]["handleAuthRequests"] is True
+    await handlers["Fetch.authRequired"]({"requestId": "server", "authChallenge": {"source": "Server"}})
+    assert sent[-1][1]["authChallengeResponse"] == {"response": "Default"}
+    await handlers["Fetch.authRequired"]({"requestId": "proxy", "authChallenge": {"source": "Proxy"}})
+    assert sent[-1][1]["authChallengeResponse"] == {
+        "response": "ProvideCredentials",
+        "username": "test-session",
+        "password": "test-lease",
+    }
+    assert "test-lease" not in str(execution.metadata)
+
+
+async def test_checkpoint_without_completed_assertion_is_not_recorded():
+    execution = browser.Execution("https://site.example", set(), active_step=2)
+    with pytest.raises(browser.StepFailed, match="successful assertion"):
+        await browser._execute_step(None, {"action": "checkpoint", "name": "unconfirmed"}, execution)
+    assert not execution.metadata.get("checkpoints")
+
+
+@pytest.mark.integration
+async def test_absence_failure_guard_stops_before_submitting(chromium, fixture):
+    origin, visited, _ = fixture
+    result = await execute_workflow(
+        origin=origin,
+        resource_origins=[],
+        cancel=never_cancel,
+        steps=[
+            {"action": "navigate", "url": "/lab/form"},
+            {"action": "assert_not_visible", "selector": "#submit", "timeout_ms": 100},
+            {"action": "click", "selector": "#submit"},
+        ],
+    )
+    assert result.outcome == "failed"
+    assert not any(method == "POST" for method, _, _ in visited)
+    assert result.metadata["steps_completed"] == 1
+
+
+@pytest.mark.integration
+async def test_unregistered_absolute_navigation_stops_without_issuing_a_request(chromium, fixture):
+    origin, visited, _ = fixture
+    result = await execute_workflow(
+        origin=origin,
+        resource_origins=[],
+        navigation_origins=["https://checkout.example"],
+        cancel=never_cancel,
+        steps=[
+            {"action": "navigate", "url": "https://unregistered.example/form"},
+            {"action": "assert_visible", "selector": "#success"},
+        ],
+    )
+    assert result.outcome == "blocked"
+    assert "outside" in result.error
+    assert not visited
+
+
+@pytest.mark.integration
+async def test_checkpoint_records_confirmed_progress_without_allowing_action_replay(chromium, fixture):
+    origin, visited, _ = fixture
+    events = []
+
+    async def record(payload):
+        events.append(payload)
+
+    result = await execute_workflow(
+        origin=origin,
+        resource_origins=[],
+        cancel=never_cancel,
+        emit=record,
+        steps=[
+            {"action": "navigate", "url": "/lab/form"},
+            {"action": "assert_not_visible", "selector": "#failure"},
+            {"action": "fill", "selector": "#name", "value": "checkpoint"},
+            {"action": "click", "selector": "#submit"},
+            {"action": "assert_text", "selector": "#success", "value": "Sample saved"},
+            {"action": "checkpoint", "name": "submission-confirmed"},
+            {"action": "assert_not_visible", "selector": "#failure"},
+        ],
+    )
+    assert result.outcome == "completed", result
+    assert result.started_action
+    assert result.metadata["non_idempotent_action_started"] is True
+    checkpoint = result.metadata["checkpoints"][0]
+    assert checkpoint == {
+        "name": "submission-confirmed",
+        "step": 6,
+        "assertion_step": 5,
+        "non_idempotent_action_started": True,
+        "replay_allowed": False,
+    }
+    assert [event for event in events if event["kind"] == "checkpoint_reached"] == [
+        {"kind": "checkpoint_reached", **checkpoint}
+    ]
+    assert len([request for request in visited if request[0] == "POST"]) == 1
 
 
 @pytest.mark.integration
@@ -252,3 +389,217 @@ async def test_chromium_closes_socket_without_forwarding_a_handshake(chromium, f
     assert result.outcome == "completed", result
     assert result.metadata["blocked_resources"] >= 1
     assert visited == [("GET", "/lab?socket", b"")]
+
+
+@pytest.mark.integration
+async def test_persistent_profile_relaunch_and_independent_sessions(chromium, fixture, tmp_path):
+    origin, _, _ = fixture
+
+    async def run(path, marker, expected):
+        return await execute_workflow(
+            origin=origin,
+            resource_origins=[],
+            cancel=never_cancel,
+            profile_dir=str(path) if path else None,
+            steps=[
+                {"action": "navigate", "url": f"/lab?profile={marker}"},
+                {"action": "assert_text", "selector": "#state", "value": expected},
+            ],
+        )
+
+    # Simultaneous assignments share the workflow but never profile storage.
+    first, second = await asyncio.gather(
+        run(tmp_path / "first", "alpha", "alpha"), run(tmp_path / "second", "beta", "beta")
+    )
+    assert first.outcome == second.outcome == "completed", (first, second)
+    assert first.metadata["profile_saved"] and second.metadata["profile_saved"]
+    assert first.metadata["runtime_stopped"] and second.metadata["runtime_stopped"]
+    for folder, expected in (("first", "alpha"), ("second", "beta")):
+        restored = await run(tmp_path / folder, "read", expected)
+        assert restored.outcome == "completed", restored
+        assert restored.metadata["profile_saved"]
+        assert restored.metadata["browser_version"]
+    fresh = await run(None, "read", "empty")
+    assert fresh.outcome == "completed", fresh
+    assert not fresh.metadata["profile_saved"]
+    assert fresh.metadata["runtime_stopped"]
+
+
+@pytest.mark.integration
+async def test_automated_preparation_is_seeded_bounded_and_labelled(chromium, fixture):
+    origin, _, _ = fixture
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    config = {"mode": "automated", "seed": 27, "min_seconds": 0.01, "max_seconds": 0.01}
+    result = await execute_workflow(
+        origin=origin,
+        resource_origins=[],
+        cancel=never_cancel,
+        preparation=config,
+        emit=emit,
+        steps=[{"action": "navigate", "url": "/lab"}, {"action": "assert_visible", "selector": "#name"}],
+    )
+    assert result.outcome == "completed", result
+    assert result.metadata["ground_truth"] == "automated"
+    preparation = result.metadata["preparation"]
+    assert preparation["executed"] == browser.preparation_plan(config)["actions"]
+    assert preparation["ground_truth"] == "automated"
+    assert any(event["kind"] == "preparation_action" for event in events)
+    assert events[-1]["kind"] == "browser_closed"
+
+
+@pytest.mark.integration
+async def test_manual_preparation_pauses_automation_until_operator_handoff(chromium, fixture):
+    origin, visited, _ = fixture
+    commands = [{"command": "type", "text": "operator private text"}, {"command": "continue"}]
+    events = []
+
+    async def control():
+        assert visited == [("GET", "/lab", b"")]  # Workflow has not navigated yet.
+        return commands.pop(0)
+
+    async def emit(event):
+        events.append(event)
+
+    result = await execute_workflow(
+        origin=origin,
+        resource_origins=[],
+        cancel=never_cancel,
+        preparation={"mode": "manual"},
+        control=control,
+        emit=emit,
+        steps=[{"action": "navigate", "url": "/lab"}, {"action": "assert_visible", "selector": "#name"}],
+    )
+    assert result.outcome == "completed", result
+    assert result.metadata["ground_truth"] == "mixed"
+    assert result.metadata["manual_actions"] == 1
+    assert any(event["kind"] == "manual_frame" for event in events)
+    assert "operator private text" not in str([e for e in events if e["kind"] != "manual_frame"])
+    kinds = [event["kind"] for event in events]
+    assert kinds.index("manual_handoff") < kinds.index("workflow_step")
+
+
+async def test_manual_requires_operator_before_launch():
+    result = await execute_workflow(
+        origin="https://site.example",
+        resource_origins=[],
+        cancel=never_cancel,
+        preparation={"mode": "manual"},
+        steps=[{"action": "navigate", "url": "/"}],
+    )
+    assert result.outcome == "failed"
+    assert "operator" in result.error
+    assert not result.started_action
+
+
+@pytest.mark.integration
+async def test_action_boundary_is_emitted_before_form_submission(chromium, fixture):
+    origin, visited, _ = fixture
+    events = []
+
+    async def emit(event):
+        events.append(event)
+        if event["kind"] == "action_started" and event.get("action") == "click":
+            assert not any(method == "POST" for method, _, _ in visited)
+
+    result = await execute_workflow(
+        origin=origin,
+        resource_origins=[],
+        cancel=never_cancel,
+        emit=emit,
+        steps=[
+            {"action": "navigate", "url": "/lab/form"},
+            {"action": "click", "selector": "#submit"},
+            {"action": "assert_text", "selector": "#success", "value": "not present"},
+        ],
+    )
+    assert result.outcome == "failed"
+    assert result.metadata["needs_reconciliation"]
+    assert result.metadata["runtime_stopped"]
+    assert any(e["kind"] == "action_started" and e.get("non_idempotent") for e in events)
+
+
+@pytest.mark.integration
+async def test_profile_compatibility_failure_never_navigates_or_publishes(chromium, fixture, tmp_path):
+    origin, visited, _ = fixture
+    result = await execute_workflow(
+        origin=origin,
+        resource_origins=[],
+        cancel=never_cancel,
+        profile_dir=str(tmp_path / "profile"),
+        expected_compatibility={
+            "adapter": "playwright",
+            "browser_version": "Chrome/1.0",
+            "os": browser.platform.system(),
+            "architecture": browser.platform.machine(),
+        },
+        steps=[{"action": "navigate", "url": "/lab"}],
+    )
+    assert result.outcome == "failed"
+    assert "compatibility" in result.error
+    assert not result.started_action and not visited
+    assert result.metadata["runtime_stopped"]
+    assert not result.metadata["profile_saved"]
+
+
+@pytest.mark.integration
+async def test_opt_in_artifacts_capture_and_redact_secrets(chromium, fixture, monkeypatch):
+    import base64
+    import json
+
+    origin, _, _ = fixture
+    monkeypatch.setenv("ABRL_SECRET_PRIVATE", "private-filled-value")
+    artifacts = []
+
+    async def emit(event):
+        if event["kind"] == "artifact":
+            artifacts.append(event)
+
+    result = await execute_workflow(
+        origin=origin,
+        resource_origins=[],
+        cancel=never_cancel,
+        emit=emit,
+        artifact_policy="all",
+        steps=[
+            {"action": "navigate", "url": "/lab?console"},
+            {"action": "fill", "selector": "#name", "secret_ref": "PRIVATE"},
+            {"action": "assert_visible", "selector": "#name"},
+        ],
+    )
+    assert result.outcome == "completed", result
+    assert result.metadata["artifact_capture"] == "completed"
+    assert {item["name"] for item in artifacts} == {"console.json", "final.png"}
+    screenshot = next(item for item in artifacts if item["name"] == "final.png")
+    assert base64.b64decode(screenshot["data_base64"]).startswith(b"\x89PNG")
+    console = next(item for item in artifacts if item["name"] == "console.json")
+    messages = json.loads(base64.b64decode(console["data_base64"]))
+    assert "private-filled-value" not in str(messages)
+    assert "[redacted]" in str(messages)
+
+
+@pytest.mark.integration
+async def test_workflow_timeout_does_not_borrow_unused_preparation_budget(chromium, fixture):
+    origin, _, _ = fixture
+
+    async def handoff():
+        return {"command": "continue"}
+
+    result = await execute_workflow(
+        origin=origin,
+        resource_origins=[],
+        cancel=never_cancel,
+        preparation={"mode": "manual", "idle_timeout_seconds": 5, "lifetime_seconds": 30},
+        control=handoff,
+        timeout_seconds=0.1,
+        steps=[
+            {"action": "navigate", "url": "/lab"},
+            {"action": "wait_for", "selector": "#never-present", "timeout_ms": 10000},
+        ],
+    )
+    assert result.outcome == "failed" and result.error == "Workflow exceeded its time budget"
+    assert result.elapsed_ms < 5000
+    assert result.metadata["runtime_stopped"]

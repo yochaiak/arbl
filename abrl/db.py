@@ -31,6 +31,9 @@ class Base(DeclarativeBase):
 
 class Target(Base):
     __tablename__ = "targets"
+    project_id: Mapped[str] = mapped_column(
+        String(36), default="default", server_default="default", index=True
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     version: Mapped[int] = mapped_column(default=1)
     proof_token: Mapped[str] = mapped_column(String(96))
@@ -48,6 +51,9 @@ class TargetVersion(Base):
 
 class Workflow(Base):
     __tablename__ = "workflows"
+    project_id: Mapped[str] = mapped_column(
+        String(36), default="default", server_default="default", index=True
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     version: Mapped[int] = mapped_column(default=1)
 
@@ -62,6 +68,9 @@ class WorkflowVersion(Base):
 
 class Run(Base):
     __tablename__ = "runs"
+    project_id: Mapped[str] = mapped_column(
+        String(36), default="default", server_default="default", index=True
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     target_id: Mapped[str] = mapped_column(ForeignKey("targets.id"), index=True)
     workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"))

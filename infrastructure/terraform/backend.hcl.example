@@ -1,0 +1,14 @@
+bucket = "REPLACE-nonversioned-state"
+key = "abrl/foundation.tfstate"
+region = "fsn1"
+endpoints = { s3 = "https://fsn1.your-objectstorage.com" }
+use_lockfile = true
+encrypt = true
+skip_credentials_validation = true
+skip_region_validation = true
+skip_requesting_account_id = true
+skip_metadata_api_check = true
+use_path_style = true
+# Export AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SSE_CUSTOMER_KEY.
+# SSE-C key is base64 32 bytes. Never place it in this file or CLI arguments.
+# DO NOT use a versioned Hetzner bucket for conditional lock operations.

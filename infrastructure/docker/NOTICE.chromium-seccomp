@@ -1,0 +1,13 @@
+chromium-seccomp.json is the Chromium user-namespace seccomp profile distributed
+by Microsoft Playwright under Apache-2.0.
+Source: https://github.com/microsoft/playwright/blob/ae935a43d9e376e4759548f6b3c6905c7b282333/utils/docker/seccomp_profile.json
+SHA-256: cc3e61cabda6bbc1e53e54d27ba4d55a9d3be829b6dd1a596f4a7b31b1cc7849
+License: https://github.com/microsoft/playwright/blob/main/LICENSE
+The profile extends Docker's default syscall set with user-namespace operations
+needed by Chromium's sandbox. It is installed only on browser workers.
+
+Local change: explicitly allow chroot in addition to the upstream profile. Docker
+otherwise drops that syscall when all container capabilities are dropped, including
+inside Chromium's newly created user namespace. The outer process remains non-root
+with all capabilities dropped and no-new-privileges; the Chromium sandbox stays on.
+Validated with the amd64 worker image on local Docker Desktop, Chromium158.0.8127.18.

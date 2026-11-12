@@ -117,6 +117,9 @@ def lab_form() -> HTMLResponse:
 
 @router.post("/lab/form")
 async def lab_form_submit(request: Request) -> HTMLResponse:
+    from abrl.observations import acceptance
+    if not acceptance(request):
+        return _page("Action declined", '<p id="form-denied">The acceptance gate requires verified Clean evidence.</p>', status=403)
     form = await _read_form(request)
     name = form.get("name", [""])[0]
     topic = form.get("topic", [""])[0]
