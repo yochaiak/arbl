@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Run each service in a process group so shutdown reaches launcher children.
+set -m
 pids=()
 cleanup() {
-  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  for pid in "${pids[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
+  wait || true
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-uv run uvicorn abrl.api:app --host 127.0.0.1 --port 8400 --no-proxy-headers --no-access-log &
+api_args=(abrl.api:app)
+if [[ ${1:-} == --test-fixtures ]]; then
+  api_args=(--app-dir tests --factory browser_fixture:create_app)
+fi
+uv run uvicorn "${api_args[@]}" --host 127.0.0.1 --port 8400 --no-proxy-headers --no-access-log &
 pids+=("$!")
 uv run dramatiq abrl.runtime --processes 1 --threads 1 &
 pids+=("$!")

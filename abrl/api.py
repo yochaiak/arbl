@@ -1,27 +1,22 @@
 import asyncio
-import hmac
-import http.client
 import json
 import logging
 import secrets
-import socket
-import ssl
-from urllib.parse import urlsplit
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select, update
 
 from abrl.artifacts import archive
 from abrl.auth import configure_auth
 from abrl.browser import browser_availability
-from abrl.config import API_ORIGIN, CONTROLLED_ORIGIN, WEB_ORIGIN
+from abrl.config import WEB_ORIGIN
 from abrl.db import (
     Event,
-    ManualObservation,
     Run,
     Session,
     Target,
@@ -32,13 +27,12 @@ from abrl.db import (
     WorkflowVersion,
     record,
 )
-from abrl.experiment_api import router as experiment_router
-from abrl.lab import diagnostics_status
-from abrl.lab import router as lab_router
 from abrl.list_queries import ordered, text_match
-from abrl.network import resolve_public_ipv4
+from abrl.network import FIXTURE_ORIGIN
 from abrl.observations import router as observation_router
 from abrl.platform_api import router as platform_router
+from abrl.platform_models import FleetSlot, WorkflowBlock, WorkflowBlockRevision
+from abrl.platform_service import uses_retired_lab_fixture
 from abrl.reports import csv_export, html_export, pdf_export, report, run_view, trial_view
 from abrl.runtime import locked_run, relative_time, settle_run
 from abrl.schemas import (
@@ -48,19 +42,25 @@ from abrl.schemas import (
     TargetInput,
     TargetView,
     TrialView,
+    WorkflowBlockInput,
     WorkflowInput,
     WorkflowView,
+    resolve_workflow_inputs,
+    validate_navigation_workflow_scope,
+    validate_workflow_page_paths,
+    workflow_step_limit,
 )
 from abrl.session_artifacts import router as artifact_router
 from abrl.session_template_api import router as template_router
+from abrl.target_authorization import LIVE_SITE_APPROVAL_REQUIRED, target_is_live_ready
 from abrl.telemetry import configure_logging, instrument
+from abrl.verifier import diagnostics_status
 
 configure_logging()
 log = logging.getLogger("abrl.api")
-PROOF_PATH = "/.well-known/abrl-target.txt"
 
 
-app = FastAPI(title="ABRL Workflow Lab", version="0.2.0")
+app = FastAPI(title="ABRL Browser Workspace", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted({WEB_ORIGIN, "http://127.0.0.1:8430", "http://localhost:8430"}),
@@ -69,7 +69,6 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "X-Project-ID", "Idempotency-Key"],
     expose_headers=["X-Total-Count"],
 )
-app.include_router(lab_router)
 
 
 def authenticate(request: Request):
@@ -88,17 +87,16 @@ def lookup(session, model, id, project_id="default"):
     return item
 
 
-def target_view(session, item: Target) -> dict:
+def target_view(session, item: Target, request: Request) -> dict:
     config = session.get(TargetVersion, (item.id, item.version)).config
-    result = {
+    retired = config["origin"] == FIXTURE_ORIGIN and not request.scope.get("abrl.test_fixture")
+    return {
         "id": item.id,
         "version": item.version,
         **config,
         "verified": item.verified_version == item.version,
+        "live_ready": not retired and target_is_live_ready(item, item.version, config),
     }
-    if not result["verified"]:
-        result.update(proof_path=PROOF_PATH, proof_token=item.proof_token)
-    return result
 
 
 def workflow_view(session, item: Workflow) -> dict:
@@ -106,19 +104,11 @@ def workflow_view(session, item: Workflow) -> dict:
     return {"id": item.id, "version": item.version, **config}
 
 
-def locally_owned_origins(data: TargetInput) -> bool:
-    return all(
-        origin in (API_ORIGIN, CONTROLLED_ORIGIN)
-        for origin in [data.origin, *getattr(data, "navigation_origins", [])]
-    )
-
-
 def add_target(session, data: TargetInput, project_id="default") -> Target:
     item = Target(
         project_id=project_id,
         version=1,
-        proof_token=secrets.token_urlsafe(32),
-        verified_version=1 if locally_owned_origins(data) else 0,
+        proof_token="",
     )
     session.add(item)
     session.flush()
@@ -132,10 +122,107 @@ def add_workflow(session, data: WorkflowInput, project_id="default") -> Workflow
     item = Workflow(version=1, project_id=project_id)
     session.add(item)
     session.flush()
-    session.add(WorkflowVersion(workflow_id=item.id, version=1, config=data.model_dump()))
+    session.add(WorkflowVersion(workflow_id=item.id, version=1, config=workflow_snapshot(session, data, project_id)))
     record(session, "workflow_created", workflow_id=item.id, version=1)
     session.flush()
     return item
+
+
+def resolve_block_steps(session, steps, project_id):
+    remaining = workflow_step_limit()
+
+    def expand(nodes, stack):
+        nonlocal remaining
+        resolved = []
+        for node in nodes:
+            remaining -= 1
+            if remaining < 0:
+                raise HTTPException(422, "Expanded workflow exceeds the configured step limit")
+            if node["action"] == "use_block":
+                key = (node["block_id"], node["block_version"])
+                if key in stack:
+                    raise HTTPException(422, "Workflow blocks cannot call themselves")
+                lookup(session, WorkflowBlock, key[0], project_id)
+                revision = session.get(WorkflowBlockRevision, key)
+                if revision is None:
+                    raise HTTPException(404, "Workflow block revision was not found")
+                node = {**node, "steps": expand(revision.config["steps"], (*stack, key))}
+            else:
+                node = {**node, **{
+                    branch: expand(node[branch], stack) for branch in ("steps", "else_steps") if node.get(branch)
+                }}
+            resolved.append(node)
+        return resolved
+
+    return expand(steps, ())
+
+
+def workflow_snapshot(session, data, project_id):
+    payload = data.model_dump(mode="json")
+    if data.schema_version != 2:
+        return payload
+    payload["steps"] = resolve_block_steps(session, payload["steps"], project_id)
+    try:
+        validated = WorkflowInput.model_validate(payload)
+        validate_workflow_page_paths(payload["steps"])
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(422, "The expanded workflow has invalid steps or exceeds its configured limits") from exc
+    return validated.model_dump(mode="json")
+
+
+class WorkflowBlockView(WorkflowBlockInput):
+    id: str
+    version: int
+
+
+def block_view(db, row, version=None):
+    version = row.version if version is None else version
+    revision = db.get(WorkflowBlockRevision, (row.id, version))
+    return {"id": row.id, "version": version, **revision.config}
+
+
+def save_block(db, row, data):
+    payload = data.model_dump(mode="json")
+    payload["steps"] = resolve_block_steps(db, payload["steps"], row.project_id)
+    try:
+        WorkflowBlockInput.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(422, "The expanded block exceeds the configured step limit") from exc
+    db.add(WorkflowBlockRevision(block_id=row.id, version=row.version, config=payload))
+    db.flush()
+    return block_view(db, row)
+
+
+@api.get("/workflow-blocks", response_model=list[WorkflowBlockView])
+def workflow_blocks(request: Request):
+    project = request.headers.get("x-project-id", "default")
+    with Session() as db:
+        return [block_view(db, row) for row in db.scalars(select(WorkflowBlock).where(WorkflowBlock.project_id == project))]
+
+
+@api.post("/workflow-blocks", status_code=201, response_model=WorkflowBlockView)
+def create_workflow_block(data: WorkflowBlockInput, request: Request):
+    with Session.begin() as db:
+        row = WorkflowBlock(project_id=request.headers.get("x-project-id", "default"))
+        db.add(row)
+        db.flush()
+        return save_block(db, row, data)
+
+
+@api.get("/workflow-blocks/{block_id}/versions", response_model=list[WorkflowBlockView])
+def workflow_block_versions(block_id: str, request: Request):
+    with Session() as db:
+        row = lookup(db, WorkflowBlock, block_id, request.headers.get("x-project-id", "default"))
+        return [block_view(db, row, version) for version in range(row.version, 0, -1)]
+
+
+@api.put("/workflow-blocks/{block_id}", response_model=WorkflowBlockView)
+def update_workflow_block(block_id: str, data: WorkflowBlockInput, request: Request):
+    with Session.begin() as db:
+        row = lookup(db, WorkflowBlock, block_id, request.headers.get("x-project-id", "default"))
+        db.refresh(row, with_for_update=True)
+        row.version += 1
+        return save_block(db, row, data)
 
 
 @app.get("/health")
@@ -150,29 +237,38 @@ def metrics():
 
 @api.get("/status")
 async def status():
-    def worker_ready() -> bool:
+    def worker_status() -> tuple[bool, dict[str, int]]:
         with Session() as session:
-            return bool(
+            cutoff = relative_time(-25)
+            ready = bool(
                 session.scalar(
-                    select(WorkerHeartbeat.id).where(WorkerHeartbeat.seen_at > relative_time(-25)).limit(1)
+                    select(WorkerHeartbeat.id).where(WorkerHeartbeat.seen_at > cutoff).limit(1)
                 )
             )
+            encoders = list(session.scalars(
+                select(FleetSlot.metadata_json["recording_encoder"].as_boolean())
+                .where(FleetSlot.seen_at > cutoff)
+            ))
+            return ready, {
+                "ready_workers": sum(value is True for value in encoders),
+                "reporting_workers": sum(value is not None for value in encoders),
+            }
 
-    browser, worker, adscore = await asyncio.gather(
+    browser, (worker, recording), adscore = await asyncio.gather(
         asyncio.to_thread(browser_availability),
-        asyncio.to_thread(worker_ready),
+        asyncio.to_thread(worker_status),
         diagnostics_status(),
     )
     adscore["configured"] = adscore["state"] in ("pending_smoke_test", "ready")
     adscore["ready"] = adscore["state"] == "ready"
-    return {"browser": browser, "worker": {"ready": worker}, "adscore": adscore}
+    return {"browser": browser, "worker": {"ready": worker}, "adscore": adscore, "recording": recording}
 
 
 @api.get("/targets", response_model=list[TargetView])
 def targets(request: Request, response: Response,
             limit: int = Query(500, ge=1, le=500), offset: int = Query(0, ge=0),
             q: str | None = Query(None, max_length=100), mode: str | None = Query(None, max_length=32),
-            verified: bool | None = None, order: str = Query("newest", max_length=32)):
+            verified: bool | None = Query(None, deprecated=True), order: str = Query("newest", max_length=32)):
     project_id = request.headers.get("x-project-id", "default")
     with Session() as session:
         query = select(Target).join(TargetVersion, (TargetVersion.target_id == Target.id) & (TargetVersion.version == Target.version)).where(Target.project_id == project_id)
@@ -190,7 +286,7 @@ def targets(request: Request, response: Response,
         })
         response.headers["X-Total-Count"] = str(session.scalar(select(func.count()).select_from(query.order_by(None).subquery())))
         return [
-            target_view(session, item)
+            target_view(session, item, request)
             for item in session.scalars(query.limit(limit).offset(offset))
         ]
 
@@ -199,7 +295,7 @@ def targets(request: Request, response: Response,
 def create_target(request: Request, data: TargetInput):
     project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
-        return target_view(session, add_target(session, data, project_id))
+        return target_view(session, add_target(session, data, project_id), request)
 
 
 @api.put("/targets/{target_id}", response_model=TargetView)
@@ -212,12 +308,10 @@ def update_target(request: Request, target_id: str, data: TargetInput):
         if item is None:
             raise HTTPException(404, "Target not found.")
         item.version += 1
-        item.proof_token = secrets.token_urlsafe(32)
-        item.verified_version = item.version if locally_owned_origins(data) else 0
         session.add(TargetVersion(target_id=item.id, version=item.version, config=data.model_dump()))
         record(session, "target_updated", target_id=item.id, version=item.version)
         session.flush()
-        return target_view(session, item)
+        return target_view(session, item, request)
 
 
 @api.get("/targets/{target_id}/versions")
@@ -233,67 +327,6 @@ def target_versions(request: Request, target_id: str):
                 .order_by(TargetVersion.version.desc())
             )
         ]
-
-
-class PinnedProofConnection(http.client.HTTPSConnection):
-    def __init__(self, hostname: str, address: str):
-        super().__init__(hostname, port=443, timeout=5, context=ssl.create_default_context())
-        self.address = address
-
-    def connect(self):
-        with_socket = socket.create_connection((self.address, self.port), timeout=self.timeout)
-        try:
-            self.sock = self._context.wrap_socket(with_socket, server_hostname=self.host)
-        except BaseException:
-            with_socket.close()
-            raise
-
-
-def fetch_proof(hostname: str, address: str) -> bytes:
-    connection = PinnedProofConnection(hostname, address)
-    try:
-        connection.request("GET", PROOF_PATH, headers={"Accept": "text/plain", "Connection": "close"})
-        response = connection.getresponse()
-        if response.status != 200:
-            raise ValueError("Marker must return HTTP 200 without redirecting.")
-        return response.read(256).strip()
-    finally:
-        connection.close()
-
-
-@api.post("/targets/{target_id}/verify", response_model=TargetView)
-async def verify_target(request: Request, target_id: str):
-    project_id = request.headers.get("x-project-id", "default")
-    with Session() as session:
-        item = lookup(session, Target, target_id, project_id)
-        config = target_view(session, item)
-        if config["verified"]:
-            return config
-        origins = {config["origin"], *config.get("navigation_origins", [])}
-        token = item.proof_token
-        version = item.version
-    for origin in sorted(origins):
-        if origin in (API_ORIGIN, CONTROLLED_ORIGIN):
-            continue
-        hostname = urlsplit(origin).hostname
-        try:
-            addresses = await asyncio.wait_for(resolve_public_ipv4(hostname), timeout=6)
-            marker = await asyncio.wait_for(
-                asyncio.to_thread(fetch_proof, hostname, addresses[0]), timeout=8
-            )
-        except (ValueError, OSError, http.client.HTTPException, TimeoutError, IndexError):
-            raise HTTPException(422, f"Could not read the ownership marker over HTTPS at {origin}.")
-        if not hmac.compare_digest(marker, token.encode()):
-            raise HTTPException(422, f"Ownership marker did not match at {origin}.")
-    with Session.begin() as session:
-        item = session.scalar(
-            select(Target).where(Target.id == target_id, Target.project_id == project_id).with_for_update()
-        )
-        if item.version != version:
-            raise HTTPException(409, "The target changed. Verify its current version.")
-        item.verified_version = version
-        record(session, "target_verified", target_id=item.id, version=version)
-        return target_view(session, item)
 
 
 @api.get("/workflows", response_model=list[WorkflowView])
@@ -337,7 +370,7 @@ def update_workflow(request: Request, workflow_id: str, data: WorkflowInput):
         if item is None:
             raise HTTPException(404, "Workflow not found.")
         item.version += 1
-        session.add(WorkflowVersion(workflow_id=item.id, version=item.version, config=data.model_dump()))
+        session.add(WorkflowVersion(workflow_id=item.id, version=item.version, config=workflow_snapshot(session, data, project_id)))
         record(session, "workflow_updated", workflow_id=item.id, version=item.version)
         session.flush()
         return workflow_view(session, item)
@@ -358,18 +391,6 @@ def workflow_versions(request: Request, workflow_id: str):
         ]
 
 
-@api.post("/starter")
-def starter(request: Request):
-    project_id = request.headers.get("x-project-id", "default")
-    from abrl.starter import seed_starter
-
-    if project_id != "default":
-        raise HTTPException(
-            409, "Starter fixtures belong to the default project; create site-specific workflows here"
-        )
-    return seed_starter()
-
-
 @api.get("/runs", response_model=list[RunView])
 def runs(request: Request):
     project_id = request.headers.get("x-project-id", "default")
@@ -384,12 +405,15 @@ def runs(request: Request):
 
 @api.post("/runs", status_code=201, response_model=RunView)
 def create_run(request: Request, data: RunInput):
+    if data.mode != "live":
+        raise HTTPException(422, "New workflow runs require live execution")
     project_id = request.headers.get("x-project-id", "default")
     with Session.begin() as session:
         target = lookup(session, Target, data.target_id, project_id)
         workflow = lookup(session, Workflow, data.workflow_id, project_id)
-        if data.mode == "live" and target.verified_version != target.version:
-            raise HTTPException(409, "Verify the current target before launching browser trials.")
+        target_config = session.get(TargetVersion, (target.id, target.version)).config
+        if not target_is_live_ready(target, target.version, target_config):
+            raise HTTPException(409, LIVE_SITE_APPROVAL_REQUIRED)
         count = session.scalar(
             select(func.count())
             .select_from(Run)
@@ -398,18 +422,32 @@ def create_run(request: Request, data: RunInput):
         if count >= 8:
             raise HTTPException(429, "Finish or cancel pending runs before starting another.")
         repetitions = data.repetitions or (300 if data.phase == "confirmation" else 30)
+        workflow_config = session.get(WorkflowVersion, (workflow.id, workflow.version)).config
+        if not request.scope.get("abrl.test_fixture") and uses_retired_lab_fixture(target_config, workflow_config):
+            raise HTTPException(409, "The Lab site was retired. Select an authorized site.")
+        try:
+            validate_navigation_workflow_scope(
+                workflow_config.get("steps", []),
+                origin=target_config["origin"],
+                resource_origins=target_config.get("resource_origins", []),
+                navigation_origins=target_config.get("navigation_origins", []),
+                all_navigation=workflow_config.get("schema_version") == 2,
+            )
+            resolve_workflow_inputs(workflow_config, {})
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
         run = Run(
             project_id=project_id,
             target_id=target.id,
             workflow_id=workflow.id,
             target_version=target.version,
             workflow_version=workflow.version,
-            target=session.get(TargetVersion, (target.id, target.version)).config,
-            workflow=session.get(WorkflowVersion, (workflow.id, workflow.version)).config,
+            target=target_config,
+            workflow=workflow_config,
             phase=data.phase,
             mode=data.mode,
             repetitions=repetitions,
-            seed=data.seed,
+            seed=data.seed if data.seed is not None else secrets.randbelow(2**31),
             status="queued",
             reliability_target=data.reliability_target,
         )
@@ -573,31 +611,9 @@ async def events(
     )
 
 
-@api.get("/diagnostics")
-def diagnostics(request: Request):
-    project_id = request.headers.get("x-project-id", "default")
-    if project_id != "default":
-        return []
-    with Session() as session:
-        return [
-            {
-                "id": x.id,
-                "created_at": x.created_at,
-                "verification_status": x.verification_status,
-                "verdict": x.verdict,
-                "raw_code": x.raw_code,
-                "source": x.source,
-            }
-            for x in session.scalars(
-                select(ManualObservation).order_by(ManualObservation.created_at.desc()).limit(100)
-            )
-        ]
-
-
 app.include_router(api)
 
 app.include_router(platform_router)
-app.include_router(experiment_router)
 app.include_router(artifact_router)
 app.include_router(template_router)
 

@@ -1,8 +1,8 @@
 """Authenticated, independently leased browser and egress processes.
 
-Run in separate network namespaces/pods: ``python -m abrl.remote_browser browser``
-and ``python -m abrl.remote_browser broker``. Neither process needs DB credentials.
-The Kubernetes controller enforces the network boundary and confirms pod deletion.
+Run ``python -m abrl.remote_browser browser`` and
+``python -m abrl.remote_browser broker`` in isolated network namespaces.
+Neither process needs database credentials.
 """
 
 from __future__ import annotations
@@ -28,10 +28,19 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import Response
 from playwright.async_api import async_playwright
 
-from abrl.adapters import BrowserRuntime, launch_adapter, package_version
-from abrl.network import EgressGuard, NetworkDenied, normalize_origin
-from abrl.profile_storage import ProfileStore
-from abrl.proxy import OxylabsBinding
+from abrl.adapters import AdapterUnavailable, BrowserRuntime, launch_adapter, package_version
+from abrl.browser_settings import DevicePreset, device_viewport, supports_user_agent_override
+from abrl.network import (
+    PROXY_CHECK_TIMEOUT_SECONDS,
+    PROXY_DESTINATION_DENIED,
+    EgressGuard,
+    NetworkDenied,
+    check_proxy_ip,
+    normalize_proxy_check_ip,
+)
+from abrl.platform_schemas import validate_user_agent
+from abrl.profile_storage import ProfileStorageError, ProfileStore
+from abrl.proxy import ProxyBinding
 
 TRANSFER_LIMIT = 256 * 1024 * 1024
 
@@ -91,7 +100,7 @@ class RuntimeLease:
 class RemoteBroker(EgressGuard):
     def __init__(self, config: dict, lease: RuntimeLease, *, bind_host="0.0.0.0", bind_port=3128):
         self.lease = lease
-        upstream = OxylabsBinding.from_config(config["proxy"]) if config.get("proxy") else None
+        upstream = ProxyBinding.from_config(config["proxy"]) if config.get("proxy") else None
         super().__init__(
             config["origin"],
             config.get("resource_origins", []),
@@ -102,26 +111,13 @@ class RemoteBroker(EgressGuard):
             navigation_origins=config.get("navigation_origins", []),
             traffic_budget_bytes=config.get("traffic_budget_bytes", 104857600),
             max_connections=config["proxy"].get("max_connections", 1) if config.get("proxy") else 32,
+            vendor_control_origins=config.get("vendor_control_origins", []),
+            allow_automatic_assets=not (config.get("proxy") or {}).get("target_origin"),
+            startup_origins=config.get("startup_origins", ()),
         )
         self.forwarding_enabled = False
-        self.vendor_controls = {
-            normalize_origin(origin) for origin in config.get("vendor_control_origins", [])
-        }
-        self.allowed |= self.vendor_controls
-
-    def forwarding_allowed(self, method, address):
-        if self.forwarding_enabled:
-            return True
-        try:
-            return method == "CONNECT" and normalize_origin("https://" + address) in self.vendor_controls
-        except NetworkDenied:
-            return False
-
-    def uses_upstream(self, origin):
-        return self.upstream is not None and origin not in self.vendor_controls
-
-    def is_vendor_control(self, origin):
-        return origin in self.vendor_controls
+        self.proxy_check_enabled = config.get("proxy_check") is True
+        self.proxy_check_started = False
 
     async def authorize_request(self, method, address, headers, writer):
         values = {}
@@ -145,7 +141,7 @@ class RemoteBroker(EgressGuard):
                 try:
                     self.lease.renew()
                     if command == "activate":
-                        self.forwarding_enabled = True
+                        self.activate_forwarding()
                     await self._json(writer, 200, self.state())
                 except ValueError:
                     await self.stop_route()
@@ -153,6 +149,26 @@ class RemoteBroker(EgressGuard):
             elif command == "stop" and method == "POST":
                 await self.stop_route()
                 await self._json(writer, 200, self.state())
+            elif command == "resource-origin" and method == "POST":
+                await self._register_asset_origin(writer, values.get("x-abrl-resource-origin", ""))
+            elif command == "proxy-check" and method == "POST":
+                remaining = self.lease.deadline - monotonic()
+                if (
+                    not self.proxy_check_enabled
+                    or self.proxy_check_started
+                    or self.upstream is None
+                    or not self.lease.stopped
+                    or remaining <= 0
+                    or self.budget_exhausted
+                ):
+                    await self._json(writer, 409, {"error": "Proxy check unavailable"})
+                else:
+                    self.proxy_check_started = True
+                    address = None
+                    with suppress(TimeoutError):
+                        async with asyncio.timeout(remaining):
+                            address = await check_proxy_ip(self.upstream)
+                    await self._json(writer, 200, {"ip": address})
             else:
                 await self._json(writer, 404, {"error": "Unknown runtime operation"})
             return False
@@ -169,6 +185,17 @@ class RemoteBroker(EgressGuard):
             return False
         return True
 
+    async def _register_asset_origin(self, writer, origin: str) -> None:
+        if self.lease.expired:
+            await self._json(writer, 409, {"error": "Runtime ownership expired"})
+            return
+        try:
+            allowed = self.allow_asset_origin(origin)
+        except NetworkDenied:
+            await self._json(writer, 400, {"error": "Invalid HTTPS resource origin"})
+            return
+        await self._json(writer, 200 if allowed else 409, {"allowed": allowed})
+
     async def stop_route(self):
         self.lease.stopped = True
         self.forwarding_enabled = False
@@ -179,12 +206,21 @@ class RemoteBroker(EgressGuard):
         await asyncio.gather(*active, return_exceptions=True)
 
     def state(self):
+        transport_events = self.transport_events[-128:]
+        if len(self.transport_events) > 128:
+            # A later burst of timeout events must not hide a denial from the runner.
+            denial = next(
+                (item for item in reversed(self.transport_events) if item.get("reason") == PROXY_DESTINATION_DENIED),
+                None,
+            )
+            if denial is not None and denial not in transport_events:
+                transport_events = [denial, *transport_events[1:]]
         return {
             **self.lease.identity(),
             "stopped": self.lease.stopped,
             "forwarding": self.forwarding_enabled and not self.lease.expired,
             "transport_summary": self.transport_summary(),
-            "transport_events": self.transport_events[-128:],
+            "transport_events": transport_events,
             "transport_usage": self.transport_usage(),
         }
 
@@ -203,7 +239,26 @@ class RemoteBroker(EgressGuard):
     async def watchdog(self):
         while not self.lease.expired:
             await asyncio.sleep(0.25)
-        await self.stop_route()
+        if not self.lease.stopped:
+            await self.stop_route()
+
+
+async def remote_proxy_check_ip(connection: dict) -> str | None:
+    headers = {
+        "Authorization": "Bearer " + capability_token(connection["token"], "broker-control"),
+        "X-ABRL-Session": connection["session_id"],
+        "X-ABRL-Epoch": str(connection["epoch"]),
+    }
+    try:
+        async with asyncio.timeout(PROXY_CHECK_TIMEOUT_SECONDS + 1):
+            async with httpx.AsyncClient(trust_env=False) as client:
+                response = await client.post(connection["proxy_url"] + "/__abrl__/proxy-check", headers=headers)
+                if response.status_code != 200:
+                    return None
+                payload = response.json()
+                return normalize_proxy_check_ip(payload.get("ip")) if isinstance(payload, dict) else None
+    except (httpx.HTTPError, TimeoutError, ValueError):
+        return None
 
 
 def transfer_key(lease: RuntimeLease) -> bytes:
@@ -307,6 +362,8 @@ class BrowserService:
         }
         self.backend_ws = None
         self.persistent = False
+        self.restore_profile = False
+        self.device_preset: DevicePreset | None = None
         self.launched = False
         self.lock = asyncio.Lock()
         self.stop_lock = asyncio.Lock()
@@ -314,25 +371,56 @@ class BrowserService:
         self.launch_task = None
         self.proxy_relay = None
 
-    async def launch(self, persistent: bool, compatibility: dict):
+    async def launch(
+        self,
+        persistent: bool,
+        compatibility: dict,
+        *,
+        restore_profile: bool = False,
+        user_agent: str | None = None,
+        device_preset: DevicePreset | None = None,
+    ):
+        try:
+            user_agent = validate_user_agent(user_agent)
+            device_viewport(device_preset)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        if user_agent is not None and not supports_user_agent_override(self.metadata["adapter"]):
+            raise HTTPException(409, "Custom User-Agent requires Playwright Chromium")
+        restore_profile = restore_profile or bool(compatibility)
+        if restore_profile and not persistent:
+            raise HTTPException(409, "profile_restore_failed")
         async with self.lock:
             if self.lease.expired:
                 raise HTTPException(409, "Browser lease expired")
             if self.launched:
-                if persistent != self.persistent:
+                configured_user_agent = self.metadata.get("configured_user_agent")
+                if (
+                    persistent != self.persistent
+                    or restore_profile != self.restore_profile
+                    or user_agent != configured_user_agent
+                    or device_preset != self.device_preset
+                ):
                     raise HTTPException(409, "Runtime launch configuration is immutable")
                 return self.state()
             self.lease.renew()
             self.persistent = persistent
+            self.restore_profile = restore_profile
+            self.device_preset = device_preset
             input_path = self.transfer.root / self.lease.session_id / "input.abrl"
+            if restore_profile and not input_path.is_file():
+                raise HTTPException(409, "profile_restore_failed")
             if persistent and input_path.exists():
-                await asyncio.to_thread(
-                    self.transfer.restore,
-                    self.lease.session_id,
-                    "input",
-                    self.directory,
-                    compatibility=compatibility,
-                )
+                try:
+                    await asyncio.to_thread(
+                        self.transfer.restore,
+                        self.lease.session_id,
+                        "input",
+                        self.directory,
+                        compatibility=compatibility,
+                    )
+                except ProfileStorageError as exc:
+                    raise HTTPException(409, "profile_restore_failed") from exc
             with socket.socket() as temporary:
                 temporary.bind(("127.0.0.1", 0))
                 port = temporary.getsockname()[1]
@@ -346,7 +434,7 @@ class BrowserService:
             try:
                 self.launch_task = asyncio.current_task()
                 proxy_url = self.config["proxy_url"]
-                if self.metadata["adapter"] in {"manual_chrome", "kameleo"}:
+                if self.metadata["adapter"] in {"manual_chrome", "cloakbrowser", "kameleo"}:
                     self.proxy_relay = await BrokerRelay(proxy_url, self.lease.proxy_token).start()
                     proxy_url = self.proxy_relay.url
                 self.adapter_context = launch_adapter(
@@ -356,9 +444,12 @@ class BrowserService:
                     self.metadata,
                     debug_port=port,
                     child_env=browser_env,
+                    expected_compatibility=compatibility if restore_profile else None,
                     proxy_auth=None
-                    if self.metadata["adapter"] in {"manual_chrome", "kameleo"}
+                    if self.proxy_relay is not None
                     else {"username": "abrl-session", "password": self.lease.proxy_token},
+                    user_agent=user_agent,
+                    device_preset=device_preset,
                 )
                 runtime = await self.adapter_context.__aenter__()
                 self.context = runtime.context
@@ -378,6 +469,7 @@ class BrowserService:
                 page = self.context.pages[0] if self.context.pages else await self.context.new_page()
                 await page.goto(marker)
                 self.metadata["context_marker"] = marker
+                self.metadata["configured_device_preset"] = device_preset
                 self.launched = True
             except BaseException:
                 await self.stop()
@@ -482,7 +574,21 @@ def create_browser_app(config: dict, lease: RuntimeLease) -> FastAPI:
         content = await request.json()
         if content.get("adapter", "playwright") != service.metadata["adapter"]:
             raise HTTPException(409, "Remote browser adapter does not match the admitted image")
-        return await service.launch(bool(content.get("persistent")), content.get("compatibility") or {})
+        restore_profile = content.get("restore_profile", False)
+        if type(restore_profile) is not bool:
+            raise HTTPException(422, "Invalid profile restoration flag")
+        try:
+            return await service.launch(
+                bool(content.get("persistent")),
+                content.get("compatibility") or {},
+                restore_profile=restore_profile,
+                user_agent=content.get("user_agent"),
+                device_preset=content.get("device_preset"),
+            )
+        except AdapterUnavailable as exc:
+            if exc.status == "profile_restore_failed":
+                raise HTTPException(409, exc.status) from exc
+            raise
 
     @app.post("/v1/stop")
     async def stop(request: Request):
@@ -592,6 +698,8 @@ async def remote_adapter(
     expected_compatibility: dict | None,
     *,
     adapter="playwright",
+    user_agent: str | None = None,
+    device_preset: DevicePreset | None = None,
 ):
     master = connection["token"]
     lease = RuntimeLease(
@@ -614,12 +722,18 @@ async def remote_adapter(
 
     async def request(method, endpoint, **kwargs):
         if endpoint.startswith(proxy_url + "/__abrl__/"):
-            kwargs["headers"] = {
-                **headers,
-                "Authorization": "Bearer " + capability_token(master, "broker-control"),
-            }
+            request_headers = httpx.Headers(kwargs.get("headers"))
+            request_headers.update(headers)
+            request_headers["Authorization"] = "Bearer " + capability_token(master, "broker-control")
+            kwargs["headers"] = request_headers
         response = await client.request(method, endpoint, **kwargs)
         if response.status_code >= 400:
+            if response.status_code == 409 and endpoint == browser_url + "/v1/launch":
+                restore_failure = False
+                with suppress(ValueError):
+                    restore_failure = response.json() == {"detail": "profile_restore_failed"}
+                if restore_failure:
+                    raise AdapterUnavailable("The saved remote profile could not be restored", "profile_restore_failed")
             raise ValueError(f"Remote runtime operation failed ({response.status_code})")
         return response
 
@@ -636,6 +750,18 @@ async def remote_adapter(
         response = (await request("POST", proxy_url + "/__abrl__/activate")).json()
         if response.get("session_id") != lease.session_id or response.get("epoch") != lease.epoch:
             raise ValueError("Remote broker identity does not match")
+
+    async def allow_asset_origin(origin: str) -> bool:
+        try:
+            response = await request(
+                "POST",
+                proxy_url + "/__abrl__/resource-origin",
+                headers={"X-ABRL-Resource-Origin": origin},
+                timeout=2,
+            )
+            return response.status_code == 200
+        except (httpx.HTTPError, ValueError):
+            return False
 
     try:
         # Pod Running is not application readiness. Wait only within a finite startup budget.
@@ -663,32 +789,53 @@ async def remote_adapter(
             if len(payload) > TRANSFER_LIMIT:
                 raise ValueError("Remote profile transfer exceeds 256 MiB")
             await request("POST", browser_url + "/v1/profile", content=payload)
+        launch_config = {
+            "persistent": bool(profile_dir),
+            "compatibility": expected_compatibility or {},
+            "restore_profile": expected_compatibility is not None,
+            "adapter": adapter,
+        }
+        if user_agent is not None:
+            launch_config["user_agent"] = user_agent
+        if device_preset is not None:
+            launch_config["device_preset"] = device_preset
         state = (
             await request(
                 "POST",
                 browser_url + "/v1/launch",
-                json={
-                    "persistent": bool(profile_dir),
-                    "compatibility": expected_compatibility or {},
-                    "adapter": adapter,
-                },
+                json=launch_config,
             )
         ).json()
-        metadata.update(
-            state["metadata"], egress_enforcement="remote broker; deployment network policies required"
-        )
+        launched_metadata = state["metadata"]
+        if user_agent is not None and launched_metadata.get("configured_user_agent") != user_agent:
+            raise AdapterUnavailable(
+                "Remote Playwright Chromium did not confirm the configured User-Agent",
+                "unsupported_operation",
+            )
+        if device_preset is not None and launched_metadata.get("configured_device_preset") != device_preset:
+            raise AdapterUnavailable("Remote browser did not confirm the device preset", "unsupported_operation")
         driver = await async_playwright().start()
         browser = await driver.chromium.connect_over_cdp(browser_url, headers=headers, timeout=30_000)
+        marker = launched_metadata["context_marker"]
         contexts = [
-            context
-            for context in browser.contexts
-            if any(page.url == state["metadata"]["context_marker"] for page in context.pages)
+            context for context in browser.contexts if any(page.url == marker for page in context.pages)
         ]
         if len(contexts) != 1:
             raise ValueError("Remote browser must expose exactly one owned context marker")
+        if user_agent is not None:
+            page = next(page for page in contexts[0].pages if page.url == marker)
+            if await page.evaluate("navigator.userAgent") != user_agent:
+                raise AdapterUnavailable(
+                    "Remote Playwright Chromium did not apply the configured User-Agent",
+                    "invalid_configuration",
+                )
         context = contexts[0]
+        metadata.update(
+            launched_metadata, egress_enforcement="remote broker; deployment network policies required"
+        )
         runtime = BrowserRuntime(context, metadata)
         runtime.activate = activate
+        runtime.allow_asset_origin = allow_asset_origin
         runtime.lease_task = heartbeat
         yield runtime
     finally:
@@ -709,7 +856,12 @@ async def remote_adapter(
                     browser_closed=bool(state["stopped"]),
                     profile_saved=False,
                 )
-                if profile_dir and state["metadata"].get("profile_saved") and metadata["runtime_stopped"]:
+                if (
+                    profile_dir
+                    and ((user_agent is None and device_preset is None) or context is not None)
+                    and state["metadata"].get("profile_saved")
+                    and metadata["runtime_stopped"]
+                ):
                     payload = (await request("GET", browser_url + "/v1/profile")).content
                     folder = store.root / lease.session_id
                     folder.mkdir(mode=0o700, exist_ok=True)

@@ -13,6 +13,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from sqlalchemy import select
 
 from abrl.db import Attempt, Run, Trial
+from abrl.session_metadata import redact_session_metadata, redact_session_text
 
 
 def trial_view(trial: Trial) -> dict:
@@ -22,11 +23,11 @@ def trial_view(trial: Trial) -> dict:
         "status": trial.status,
         "outcome": trial.outcome,
         "elapsed_ms": trial.elapsed_ms,
-        "error": trial.error,
+        "error": redact_session_text(trial.error),
         "attempts": trial.attempts,
         "verification_status": "not_collected",
         "verdict": None,
-        "environment": trial.metadata_json,
+        "environment": redact_session_metadata(trial.metadata_json),
     }
 
 

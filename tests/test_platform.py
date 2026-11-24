@@ -1,13 +1,14 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from browser_fixture import create_app
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from abrl import access, observations, platform_api, session_runner
-from abrl.api import app
+from abrl import access, observations, platform_api, platform_service, session_runner
+from abrl import api as main_api
 from abrl.browser import BrowserResult
 from abrl.db import Base, Target, TargetVersion, Workflow, WorkflowVersion
 from abrl.platform_models import (
@@ -15,6 +16,7 @@ from abrl.platform_models import (
     BrowserSession,
     Membership,
     Project,
+    ProviderObservation,
     Schedule,
     ScheduledOccurrence,
     SessionAttempt,
@@ -26,16 +28,16 @@ from abrl.scheduling import materialize_due, preview
 
 
 @pytest.fixture
-def db(monkeypatch):
+def db(monkeypatch, tmp_path):
     monkeypatch.setenv("ABRL_COMMAND_ENCRYPTION_KEY", "Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2M=")
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    # Worker heartbeats and finalization use different threads and connections.
+    engine = create_engine(f"sqlite:///{tmp_path / 'platform.sqlite3'}")
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
-    for module in (access, platform_api, session_runner, observations):
+    for module in (access, main_api, platform_api, session_runner, observations):
         monkeypatch.setattr(module, "Session", factory)
     monkeypatch.setattr(access, "OPERATOR_TOKEN", "test-token-" + "x" * 32)
     monkeypatch.setattr(observations, "OPERATOR_TOKEN", "test-token-" + "x" * 32)
-    monkeypatch.setattr(access, "CLOUD", False)
     with factory.begin() as connection:
         access.ensure_bootstrap(connection)
         connection.add_all(
@@ -82,8 +84,8 @@ def data(**changes):
     )
 
 
-def client():
-    return TestClient(app, headers={"Authorization": "Bearer test-token-" + "x" * 32})
+def client(*, production=False):
+    return TestClient(main_api.app if production else create_app(), headers={"Authorization": "Bearer test-token-" + "x" * 32})
 
 
 def create(db, **changes):
@@ -103,6 +105,282 @@ def test_batch_idempotency_and_independent_profiles(db):
         assert sessions["total"] == 4 and len(sessions["items"]) == 2
     with db() as connection:
         assert len(set(connection.scalars(select(BrowserSession.profile_id)))) == 4
+
+
+def test_session_workflow_identity_uses_the_pinned_batch_snapshot(db):
+    original = create(db, count=2)
+    with db.begin() as connection:
+        workflow = connection.get(Workflow, "workflow")
+        old_version = connection.get(WorkflowVersion, (workflow.id, 1))
+        workflow.version = 2
+        connection.add(
+            WorkflowVersion(
+                workflow_id=workflow.id, version=2, config={**old_version.config, "name": "Renamed landing"}
+            )
+        )
+        updated = create_batch(
+            connection, data().model_copy(update={"idempotency_key": "renamed-workflow-batch"}), "default"
+        )
+
+    with client() as api:
+        response = api.get("/api/v1/sessions")
+        assert response.status_code == 200, response.text
+        sessions = response.json()["items"]
+        assert {(row["batch_id"], row["workflow_name"], row["workflow_version"]) for row in sessions} == {
+            (original.id, "Landing", 1),
+            (updated.id, "Renamed landing", 2),
+        }
+
+        page = api.get("/api/v1/sessions", params={"batch_id": original.id, "limit": 1, "offset": 1}).json()
+        assert page["total"] == 2
+        (row,) = page["items"]
+        assert (row["workflow_name"], row["workflow_version"]) == ("Landing", 1)
+
+        endpoint = f"/api/v1/sessions/{row['id']}"
+        detail = api.get(endpoint).json()
+        assert (detail["workflow_name"], detail["workflow_version"]) == ("Landing", 1)
+        stop = {"command": "stop", "idempotency_key": "stop-original-workflow"}
+        stopped = api.post(f"{endpoint}/commands", json=stop)
+        assert stopped.status_code == 200, stopped.text
+        assert stopped.json()["status"] == "cancelled"
+        assert (stopped.json()["workflow_name"], stopped.json()["workflow_version"]) == ("Landing", 1)
+        assert api.post(f"{endpoint}/commands", json=stop).json() == stopped.json()
+
+
+def test_session_workflow_identity_is_nullable_for_historical_snapshots(db):
+    batch = create(db)
+    with db.begin() as connection:
+        stored = connection.get(SessionBatch, batch.id)
+        stored.config = {
+            key: value
+            for key, value in stored.config.items()
+            if key not in {"workflow", "workflow_version"}
+        }
+    with client() as api:
+        (row,) = api.get("/api/v1/sessions").json()["items"]
+        detail = api.get(f"/api/v1/sessions/{row['id']}").json()
+        for item in (row, detail):
+            assert item["workflow_name"] is None
+            assert item["workflow_version"] is None
+
+
+def test_parameterized_loopback_url_cannot_launch_on_an_external_target(db, monkeypatch):
+    from abrl import api as legacy_api
+
+    monkeypatch.setattr(legacy_api, "Session", db)
+    step = {
+        "action": "navigate",
+        "url": "http://127.0.0.1:8400/lab?term=[QUERY]&pub_sub_id=[SUBID]",
+        "fixture_params": {"QUERY": "local QA", "SUBID": "fixture-1"},
+    }
+    with db.begin() as connection:
+        workflow = connection.get(WorkflowVersion, ("workflow", 1))
+        workflow.config = {**workflow.config, "steps": [step, workflow.config["steps"][-1]]}
+    with client() as api:
+        accepted = api.post("/api/v1/batches", json=data().model_dump(mode="json"))
+        assert accepted.status_code == 201, accepted.text
+        assert accepted.json()["config"]["workflow"]["steps"][0] == step
+
+        with db.begin() as connection:
+            target = connection.get(TargetVersion, ("target", 1))
+            target.config = {**target.config, "origin": "https://outside.example"}
+        rejected_batch = api.post(
+            "/api/v1/batches",
+            json={**data().model_dump(mode="json"), "idempotency_key": "different-target"},
+        )
+        rejected_run = api.post("/api/v1/runs", json={"target_id": "target", "workflow_id": "workflow"})
+        for response in (rejected_batch, rejected_run):
+            assert response.status_code == 409, response.text
+            assert "registered target scope" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("url", "params"),
+    [
+        ("/verify", None),
+        (
+            "https://checkout.example/verify?q=[QUERY]&id=[SUBID]",
+            {"QUERY": "QA", "SUBID": "run-1"},
+        ),
+    ],
+)
+def test_external_navigation_only_workflow_can_run_for_a_registered_site(db, url, params):
+    with client() as api:
+        registered = api.post(
+            "/api/v1/targets",
+            json={
+                "name": "External verification site",
+                "origin": "https://store.example",
+                "navigation_origins": ["https://checkout.example"],
+                "resource_origins": ["https://assets.example"],
+                "authorized": True,
+            },
+        )
+        assert registered.status_code == 201, registered.text
+        target = registered.json()
+        assert target["live_ready"]
+
+        step = {"action": "navigate", "url": url, "fixture_params": params}
+        saved = api.post("/api/v1/workflows", json={"name": "Verification page", "steps": [step]})
+        assert saved.status_code == 201, saved.text
+        workflow = saved.json()
+        saved_step = workflow["steps"][0]
+        assert {key: saved_step[key] for key in step} == step
+
+        run = {"target_id": target["id"], "workflow_id": workflow["id"], "mode": "live", "repetitions": 1}
+        batch = {
+            **data().model_dump(mode="json"),
+            "target_id": target["id"],
+            "workflow_id": workflow["id"],
+            "mode": "live",
+        }
+        for endpoint, payload in (("runs", run), ("batches", batch)):
+            accepted = api.post(f"/api/v1/{endpoint}", json=payload)
+            assert accepted.status_code == 201, accepted.text
+
+
+@pytest.fixture
+def parameterized_workflow(db):
+    steps = [
+        {
+            "action": "navigate",
+            "url": "/lab?term=[QUERY]&pub_sub_id=[SUBID]",
+            "fixture_params": {"QUERY": "original query", "SUBID": "original subid"},
+        },
+        {
+            "action": "navigate",
+            "url": "/lab?term=[QUERY]",
+            "fixture_params": {"QUERY": "another query"},
+        },
+        {"action": "assert_visible", "selector": "#lab-ready"},
+    ]
+    with db.begin() as connection:
+        workflow = connection.get(WorkflowVersion, ("workflow", 1))
+        workflow.config = {**workflow.config, "steps": steps}
+    return steps
+
+
+def test_batch_launch_overrides_only_the_snapshot_and_preserves_retry_identity(db, parameterized_workflow):
+    original_steps = parameterized_workflow
+    payload = data().model_dump(mode="json")
+    override = {"QUERY": "local QA & β"}
+    with client() as api:
+        response = api.post(
+            "/api/v1/batches", json={**payload, "fixture_params": {"QUERY": f"  {override['QUERY']}  "}}
+        )
+        assert response.status_code == 201, response.text
+        launch = response.json()
+        assert launch["config"]["fixture_params"] == override
+        assert launch["config"]["workflow"]["steps"] == [
+            {
+                **original_steps[0],
+                "fixture_params": {"QUERY": override["QUERY"], "SUBID": "original subid"},
+            },
+            {**original_steps[1], "fixture_params": override},
+            original_steps[2],
+        ]
+
+        retry = api.post("/api/v1/batches", json={**payload, "fixture_params": override})
+        assert retry.status_code == 201, retry.text
+        assert retry.json()["id"] == launch["id"]
+        conflict = api.post("/api/v1/batches", json={**payload, "fixture_params": {"QUERY": "other"}})
+        assert conflict.status_code == 409, conflict.text
+
+        defaults_payload = {**payload, "idempotency_key": "default-fixture-values"}
+        defaults = api.post("/api/v1/batches", json=defaults_payload)
+        assert defaults.status_code == 201, defaults.text
+        assert defaults.json()["config"].get("fixture_params") is None
+        assert defaults.json()["config"]["workflow"]["steps"] == original_steps
+        null_override = api.post("/api/v1/batches", json={**defaults_payload, "fixture_params": None})
+        assert null_override.status_code == 201, null_override.text
+        assert null_override.json()["id"] == defaults.json()["id"]
+
+    with db() as connection:
+        assert connection.get(WorkflowVersion, ("workflow", 1)).config["steps"] == original_steps
+        assert len(list(connection.scalars(select(BrowserSession)))) == 2
+
+
+@pytest.mark.parametrize("incompatible_scope", ["resource", "navigation"])
+def test_fixture_override_rejects_incompatible_launch_scope(
+    db, parameterized_workflow, incompatible_scope
+):
+    with db.begin() as connection:
+        target = connection.get(TargetVersion, ("target", 1))
+        if incompatible_scope == "resource":
+            target.config = {**target.config, "resource_origins": ["https://outside.example"]}
+        elif incompatible_scope == "navigation":
+            target.config = {**target.config, "navigation_origins": ["https://outside.example"]}
+    with client() as api:
+        response = api.post(
+            "/api/v1/batches",
+            json={**data().model_dump(mode="json"), "fixture_params": {"QUERY": "local QA"}},
+        )
+        assert response.status_code == 409, response.text
+        assert "local ABRL test site" in response.json()["detail"]
+    with db() as connection:
+        assert not list(connection.scalars(select(SessionBatch)))
+
+
+def test_fixture_override_rejects_unused_keys_and_overlong_resolved_urls(db, parameterized_workflow):
+    with db.begin() as connection:
+        workflow = connection.get(WorkflowVersion, ("workflow", 1))
+        workflow.config = {
+            **workflow.config,
+            "steps": [parameterized_workflow[1], parameterized_workflow[2]],
+        }
+    payload = data().model_dump(mode="json")
+    with client() as api:
+        unused = api.post("/api/v1/batches", json={**payload, "fixture_params": {"SUBID": "local QA"}})
+        assert unused.status_code == 409, unused.text
+        assert "SUBID" in unused.json()["detail"]
+        overlong = api.post("/api/v1/batches", json={**payload, "fixture_params": {"QUERY": "😀" * 200}})
+        assert overlong.status_code == 409, overlong.text
+        assert "exceeds 1500 characters" in overlong.json()["detail"]
+    with db() as connection:
+        assert not list(connection.scalars(select(SessionBatch)))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("user_agent", " "),
+        ("user_agent", "Fixture\t"),
+        ("user_agent", "\r\nFixture"),
+        ("user_agent", "Fixture\x00"),
+        ("user_agent", "Fixtür"),
+        ("user_agent", "x" * 1025),
+        ("user_agent", 1),
+        ("referrer", "/entry"),
+        ("referrer", "ftp://fixture.example/entry"),
+        ("referrer", "https:///fixture.example/entry"),
+        ("referrer", "https://fixture.example:65536/entry"),
+        ("referrer", "https://user:pass@fixture.example/entry"),
+        ("referrer", "https://@fixture.example/entry"),
+        ("referrer", "https://fixture.example/entry#"),
+        ("referrer", " https://fixture.example/entry"),
+        ("referrer", "https://fixture.example/entry\n"),
+        ("referrer", "https://fixture.example/entry\x85"),
+        ("referrer", "https://fixture.example/entry\x9f"),
+        ("referrer", r"https://fixture.example\entry"),
+        ("referrer", "https://fixture.example/" + "x" * 2048),
+    ],
+)
+def test_batch_rejects_invalid_browser_setting(field, value):
+    with pytest.raises(ValidationError) as error:
+        data(**{field: value})
+    assert error.value.errors()[0]["loc"] == (field,)
+
+
+@pytest.mark.parametrize("adapter", ["manual_chrome", "kameleo", "cloakbrowser"])
+def test_referrer_is_available_when_custom_user_agent_is_incompatible(adapter):
+    settings = {
+        "adapters": ["playwright", adapter],
+        "preparation": {"mode": "manual"} if adapter == "manual_chrome" else {},
+        "referrer": "http://fixture.example/entry?from=qa",
+    }
+    assert data(**settings).referrer == settings["referrer"]
+    with pytest.raises(ValidationError, match="Custom User-Agent requires Playwright Chromium"):
+        data(**settings, user_agent="ABRL Fixture/1.0")
 
 
 def test_roles_and_project_isolation(db):
@@ -144,6 +422,83 @@ def test_profile_owner_epoch_and_lost_lease_quarantine(db):
         assert connection.get(BrowserSession, work.id).status == "needs_reconciliation"
     with client() as api:
         assert api.post(f"/api/v1/profiles/{work.profile_id}/reset", json={}).status_code == 409
+
+
+def test_session_failure_with_confirmed_shutdown_leaves_batch_siblings_running(db, monkeypatch):
+    monkeypatch.setattr(
+        platform_service, "execution_capabilities", lambda: [{"id": "playwright", "available": True}]
+    )
+    batch = create(db, count=3, concurrency=2, mode="live")
+    with db.begin() as connection:
+        session_runner.admission_tick(connection)
+    failed = session_runner.claim("standard")
+    assert failed is not None
+    with db.begin() as connection:
+        connection.get(Target, "target").last_started_at = None
+    active = session_runner.claim("standard")
+    assert active is not None
+    session_runner.record_activity(active, {"kind": "workflow_started"})
+    assert session_runner.claim("standard") is None
+
+    session_runner.finish(
+        failed, BrowserResult("failed", 1, "Browser startup failed", {"runtime_stopped": True}, False)
+    )
+    with db.begin() as connection:
+        assert connection.get(BrowserSession, failed.id).status == "failed"
+        assert connection.get(BrowserProfile, failed.profile_id).owner_session_id is None
+        assert connection.get(BrowserSession, active.id).status == "running"
+        assert connection.get(BrowserSession, active.id).lease_token == active.lease
+        assert connection.get(SessionBatch, batch.id).status == "running"
+        connection.get(Target, "target").last_started_at = None
+        session_runner.admission_tick(connection)
+
+    queued = session_runner.claim("standard")
+    assert queued is not None and queued.id not in {failed.id, active.id}
+    session_runner.finish(queued, BrowserResult("completed", 1, None, {"runtime_stopped": True}, True))
+    with db() as connection:
+        assert connection.get(SessionBatch, batch.id).finished_at is None
+
+    session_runner.finish(active, BrowserResult("completed", 1, None, {"runtime_stopped": True}, True))
+    with db() as connection:
+        view = platform_service.batch_view(connection, connection.get(SessionBatch, batch.id))
+        assert view["status"] == "completed" and view["finished_at"] is not None
+        assert view["counts"] == {"completed": 2, "failed": 1}
+
+
+def test_missing_snapshot_manifest_fails_only_one_queued_session(db, monkeypatch):
+    monkeypatch.setattr(
+        platform_service, "execution_capabilities", lambda: [{"id": "playwright", "available": True}]
+    )
+    batch = create(db, count=2, concurrency=2, mode="live", persistence="persistent")
+    with db.begin() as connection:
+        broken, sibling = connection.scalars(
+            select(BrowserSession)
+            .where(BrowserSession.batch_id == batch.id)
+            .order_by(BrowserSession.ordinal)
+        ).all()
+        connection.get(BrowserProfile, broken.profile_id).snapshot_key = "private-fixture-snapshot.bundle"
+        session_runner.admission_tick(connection)
+        assert broken.admitted and sibling.admitted
+
+    work = session_runner.claim("standard")
+    assert work is not None and work.id == sibling.id
+    with db() as connection:
+        failed = connection.get(BrowserSession, broken.id)
+        assert failed.status == "failed" and failed.finished_at is not None
+        assert failed.error == "Profile snapshot manifest is missing"
+        assert not failed.admitted
+        assert failed.attempt_number == 0 and failed.started_at is None
+        assert failed.lease_token is None and failed.lease_until is None and failed.owner_worker is None
+        assert connection.get(BrowserProfile, failed.profile_id).owner_session_id is None
+        attempt = connection.scalar(select(SessionAttempt).where(SessionAttempt.session_id == failed.id))
+        assert attempt is None
+        assert connection.get(SessionBatch, batch.id).status == "running"
+
+    session_runner.finish(work, BrowserResult("completed", 1, None, {"runtime_stopped": True}, True))
+    with db() as connection:
+        view = platform_service.batch_view(connection, connection.get(SessionBatch, batch.id))
+        assert view["status"] == "completed"
+        assert view["counts"] == {"completed": 1, "failed": 1}
 
 
 def test_pause_stops_admission_cancel_retains_result(db):
@@ -198,6 +553,8 @@ def test_schedule_jerusalem_dst_and_occurrence_replay(db):
     with db.begin() as connection:
         from abrl.platform_service import batch_snapshot
 
+        target = connection.get(TargetVersion, ("target", 1))
+        target.config = {**target.config, "origin": "https://schedule.example"}
         batch = data()
         instant = datetime.now(UTC)
         cfg = ScheduleInput(name="Once", kind="once", start_at=instant, batch=batch).model_dump(mode="json")
@@ -212,12 +569,58 @@ def test_schedule_jerusalem_dst_and_occurrence_replay(db):
         assert len(connection.scalars(select(SessionBatch)).all()) == 1
 
 
+@pytest.mark.parametrize("mode, origin", [
+    ("demo", "https://schedule.example"),
+    ("live", "http://127.0.0.1:8400"),
+    ("live", "https://old-lab.example"),
+])
+def test_retired_schedule_pauses_until_live_revision_and_resume(db, monkeypatch, mode, origin):
+    from abrl import scheduling
+
+    monkeypatch.setattr(platform_service, "CONTROLLED_ORIGIN", "https://old-lab.example")
+    monkeypatch.setattr(scheduling, "CONTROLLED_ORIGIN", "https://old-lab.example")
+    instant = datetime.now(UTC)
+    with db.begin() as connection:
+        target = connection.get(TargetVersion, ("target", 1))
+        target.config = {**target.config, "origin": origin}
+        batch = data(mode=mode)
+        config = ScheduleInput(
+            name="Retired", kind="interval", interval_seconds=300, start_at=instant, batch=batch
+        ).model_dump(mode="json")
+        config["pinned"] = platform_service.batch_snapshot(connection, batch, "default")
+        schedule = Schedule(project_id="default", name="Retired", config=config, next_fire_at=instant.isoformat())
+        connection.add(schedule)
+        connection.flush()
+        schedule_id = schedule.id
+        connection.add(ScheduledOccurrence(
+            schedule_id=schedule_id, version=1, scheduled_for=instant.isoformat(), status="waiting"
+        ))
+        materialize_due(connection, instant + timedelta(seconds=1))
+        assert not schedule.enabled and schedule.next_fire_at is None
+        assert connection.scalar(select(ScheduledOccurrence)).status == "skipped"
+        assert connection.scalar(select(SessionBatch)) is None
+        target.config = {**target.config, "origin": "https://schedule.example"}
+    base = f"/api/v1/schedules/{schedule_id}"
+    with client(production=True) as api:
+        listed = api.get("/api/v1/schedules").json()["items"][0]
+        assert not listed["enabled"] and listed["pause_reason"]
+        assert api.post(base + "/resume").status_code == 409
+        assert api.post(base + "/run-now", headers={"Idempotency-Key": "retired-now"}).status_code == 409
+        settings = data().model_dump(mode="json", exclude_unset=True)
+        updated = api.put(base, json={"name": "Ready", "kind": "interval", "interval_seconds": 300, "batch": settings})
+        assert updated.status_code == 200, updated.text
+        assert not updated.json()["enabled"] and updated.json()["pause_reason"] is None
+        assert api.post(base + "/resume").json()["enabled"] is True
+        batch = api.post(base + "/run-now", headers={"Idempotency-Key": "retired-now"}).json()
+        assert batch["config"]["artifact_policy"] == "all" and batch["config"]["capture_javascript"] is True
+
+
 @pytest.mark.asyncio
 async def test_observations_verified_negative_and_failed_positive_callback(db, monkeypatch):
     with db.begin() as connection:
         target = connection.get(TargetVersion, ("target", 1))
         target.config = {**target.config, "mode": "instrumented"}
-    create(db, mode="live", count=2, concurrency=2)
+    batch = create(db, mode="live", count=2, concurrency=2)
     with db.begin() as connection:
         session_runner.admission_tick(connection)
     work = session_runner.claim("standard")
@@ -230,11 +633,24 @@ async def test_observations_verified_negative_and_failed_positive_callback(db, m
         context=observations.context_token(work.id, work.lease, work.epoch),
         signature="positive-looking-callback",
         idempotency_key="observation-01",
-        client_ip="8.8.8.8",
+        client_ip="::ffff:8.8.8.8",
         user_agent="Test browser",
     )
-    first = await observations.ingest(value, source="site_connector")
+    connector_secret = "test-connector-" + "c" * 32
+    monkeypatch.setenv("ABRL_OBSERVATION_CONNECTOR_TOKEN", connector_secret)
+    with client() as api:
+        assert api.post("/api/v1/integration-observations", json=value.model_dump()).status_code == 401
+        response = api.post(
+            "/api/v1/integration-observations",
+            headers={"Authorization": "Bearer " + connector_secret},
+            json=value.model_dump(),
+        )
+        assert response.status_code == 200, response.text
+        first = response.json()
     assert first["accepted"] is False and first["raw_code"] == 9
+    assert "observed_ip" not in first
+    with db() as connection:
+        assert connection.get(ProviderObservation, first["id"]).observed_ip == "8.8.8.8"
     assert (await observations.ingest(value, source="site_connector"))["id"] == first["id"]
     session_runner.finish(work, BrowserResult("completed", 10, None, {"runtime_stopped": True}, True))
     with db.begin() as connection:
@@ -247,10 +663,20 @@ async def test_observations_verified_negative_and_failed_positive_callback(db, m
 
     monkeypatch.setattr(observations, "verify_observation", failed)
     value = value.model_copy(
-        update={"context": observations.context_token(other.id, other.lease, other.epoch)}
+        update={
+            "context": observations.context_token(other.id, other.lease, other.epoch),
+            "client_ip": "8.8.8.8",
+        }
     )
     result = await observations.ingest(value, source="site_connector")
     assert result["accepted"] is False and result["verification_status"] == "failed"
+    with client() as api:
+        assert api.get(f"/api/v1/batches/{batch.id}/ip-summary").json() == {
+            "expected_sessions": 2,
+            "observed_sessions": 2,
+            "distinct_ips": 1,
+            "status": "duplicate",
+        }
 
 
 def test_recovery_requires_explicit_evidence_and_fences_stale_worker(db):
@@ -279,40 +705,6 @@ def test_recovery_requires_explicit_evidence_and_fences_stale_worker(db):
     with db() as connection:
         assert connection.get(BrowserSession, work.id).status == "failed"
         assert connection.get(BrowserProfile, work.profile_id).owner_session_id is None
-
-
-def test_experiment_draft_version_and_execution_idempotency(db, monkeypatch):
-    from abrl import experiment_api
-
-    monkeypatch.setattr(experiment_api, "Session", db)
-    payload = {
-        "name": "Matched group definitions",
-        "groups": [data().model_dump(mode="json"), data().model_dump(mode="json")],
-    }
-    with client() as api:
-        created = api.post("/api/v1/experiments", json=payload)
-        assert created.status_code == 201, created.text
-        identity = created.json()["id"]
-        assert (
-            api.post(
-                f"/api/v1/experiments/{identity}/runs", headers={"Idempotency-Key": "run-once-01"}
-            ).status_code
-            == 409
-        )
-        assert api.post(f"/api/v1/experiments/{identity}/validate").json()["status"] == "ready"
-        first = api.post(f"/api/v1/experiments/{identity}/runs", headers={"Idempotency-Key": "run-once-01"})
-        assert first.status_code == 201, first.text
-        second = api.post(
-            f"/api/v1/experiments/{identity}/runs", headers={"Idempotency-Key": "run-once-01"}
-        )
-        assert first.json() == second.json() and len(first.json()["batch_ids"]) == 2
-        assert (
-            api.put(f"/api/v1/experiments/{identity}", json={**payload, "name": "New revision"}).json()[
-                "version"
-            ]
-            == 2
-        )
-        assert api.get(f"/api/v1/experiments/{identity}/runs").json()[0]["version"] == 1
 
 
 def test_encrypted_artifact_access_and_retention(db, monkeypatch, tmp_path):
@@ -355,44 +747,3 @@ def test_encrypted_artifact_access_and_retention(db, monkeypatch, tmp_path):
     session_artifacts.expire_artifacts()
     with client() as api:
         assert api.get("/api/v1/artifacts/" + identity).status_code == 410
-
-
-@pytest.mark.asyncio
-async def test_controlled_callback_uses_trusted_metadata_and_gate(db, monkeypatch):
-    monkeypatch.setenv("ABRL_ADSCORE_ZONE_KEY", "authorized_test_zone")
-    with db.begin() as connection:
-        target = connection.get(TargetVersion, ("target", 1))
-        target.config = {**target.config, "mode": "instrumented", "origin": "https://fixture.example"}
-    create(db, mode="live")
-    with db.begin() as connection:
-        session_runner.admission_tick(connection)
-    work = session_runner.claim("standard")
-    captured = {}
-
-    async def failed(**kwargs):
-        captured.update(kwargs)
-        return {"verification_status": "failed", "verdict": None, "raw_code": None}
-
-    monkeypatch.setattr(observations, "verify_observation", failed)
-    context = observations.context_token(work.id, work.lease, work.epoch)
-    with TestClient(app, base_url="https://fixture.example", client=("8.8.8.8", 51000)) as api:
-        page = api.get("/lab/research", params={"context": context, "next": "/lab/form"})
-        assert page.status_code == 200, page.text
-        response = api.post(
-            "/lab/research",
-            json={
-                "context": context,
-                "signature": "callback-says-success",
-                "idempotency_key": "signature-01",
-                "client_ip": "1.1.1.1",
-            },
-            headers={"Origin": "https://fixture.example", "User-Agent": "actual-agent"},
-        )
-        assert response.status_code == 200, response.text
-        assert captured["ip_address"] == "8.8.8.8" and captured["user_agent"] == "actual-agent"
-        assert response.json()["accepted"] is False
-        assert api.post("/lab/form", data={"name": "Sample", "topic": "research"}).status_code == 403
-        injection = api.get(
-            "/lab/research", params={"context": context, "next": "/lab</script><script>bad()</script>"}
-        )
-        assert injection.status_code == 422

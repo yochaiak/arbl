@@ -5,9 +5,51 @@ from sqlalchemy import select
 from test_platform import client, data
 
 from abrl.platform_models import BrowserProfile, BrowserSession, SessionBatch, SessionBatchItem
-from abrl.platform_service import settle_batch
+from abrl.platform_service import digest, settle_batch
 
 db = test_platform.db
+
+
+def test_live_defaults_reuse_server_seed_and_reject_stale_workflow(db, monkeypatch):
+    from abrl import platform_service
+
+    seeds = iter((31, 79))
+    monkeypatch.setattr(platform_service.secrets, "randbelow", lambda _limit: next(seeds))
+    payload = {"target_id": "target", "workflow_id": "workflow", "count": 1, "idempotency_key": "live-defaults"}
+    with client() as api:
+        url = "/api/v1/batches"
+        changed = api.post(url, json={**payload, "expected_workflow_version": 2})
+        assert changed.status_code == 409 and "workflow changed" in changed.json()["detail"]
+        first = api.post(url, json={**payload, "expected_workflow_version": 1})
+        assert first.status_code == 201, first.text
+        config = first.json()["config"]
+        assert (config["mode"], config["seed"], config["artifact_policy"], config["capture_javascript"]) == (
+            "live", 31, "all", True,
+        )
+        assert api.post(url, json={**payload, "expected_workflow_version": 1}).json() == first.json()
+        next_batch = api.post(url, json={**payload, "idempotency_key": "live-defaults-next"})
+        assert next_batch.json()["config"]["seed"] == 79
+
+
+def test_mixed_batch_reuses_compatible_profiles_in_requested_order(db):
+    with db.begin() as connection:
+        connection.add_all([
+            BrowserProfile(id="human", project_id="default", name="Human", adapter="manual_chrome", persistence="fresh"),
+            BrowserProfile(id="auto", project_id="default", name="Auto", adapter="playwright", persistence="fresh"),
+        ])
+    payload = {
+        "target_id": "target", "workflow_id": "workflow", "count": 2,
+        "adapters": ["playwright", "manual_chrome"], "profile_ids": ["human", "auto"],
+        "seed": 0, "idempotency_key": "mixed-profile-order",
+    }
+    with client() as api:
+        response = api.post("/api/v1/batches", json=payload)
+        assert response.status_code == 201, response.text
+        batch = response.json()
+        assert batch["creation"] == {"created": 2}
+        assert batch["config"]["preparation"]["mode"] == "none"
+        items = api.get(f"/api/v1/batches/{batch['id']}/items").json()["items"]
+        assert [item["adapter"] for item in items] == ["manual_chrome", "playwright"]
 
 
 def profiles(db):
@@ -62,6 +104,62 @@ def test_partial_creation_retry_is_idempotent_and_never_recreates_success(db):
         assert items[1]["attempts"] == 3 and items[1]["session_id"] != first_id
     with db() as connection:
         assert len(list(connection.scalars(select(BrowserSession)))) == 2
+
+
+def test_batch_retries_use_preexisting_hash_when_browser_settings_are_unset(db):
+    historical = data(mode="demo", seed=42, artifact_policy="none", name="Browser experiment").model_dump(
+        mode="json",
+        exclude={
+            "user_agent", "referrer", "capture_javascript", "fixture_params", "device_preset", "batch_presets",
+            "expected_workflow_version", "expected_dependencies", "session_groups", "workflow_inputs",
+        },
+    )
+    with db.begin() as connection:
+        row = SessionBatch(
+            project_id="default",
+            name=historical["name"],
+            config=historical,
+            request_hash=digest(historical),
+            idempotency_key=historical["idempotency_key"],
+            count=historical["count"],
+            concurrency=historical["concurrency"],
+        )
+        connection.add(row)
+    with client() as api:
+        for request in (
+            historical,
+            {**historical, "user_agent": None, "referrer": None},
+            {**historical, "capture_javascript": False},
+        ):
+            response = api.post("/api/v1/batches", json=request)
+            assert response.status_code == 201, response.text
+            assert response.json()["id"] == row.id
+        for setting in ("user_agent", "referrer"):
+            response = api.post(
+                "/api/v1/batches", json={**historical, setting: "https://fixture.example/source"}
+            )
+            assert response.status_code == 409, response.text
+
+
+def test_javascript_capture_is_live_only_and_part_of_launch_identity(db):
+    with client() as api:
+        url = "/api/v1/batches"
+        demo = data(mode="demo").model_dump(mode="json")
+        rejected = api.post(url, json={**demo, "capture_javascript": True})
+        assert rejected.status_code == 422 and "require live execution" in rejected.text
+
+        live = {**demo, "mode": "live", "capture_javascript": False}
+        disabled = api.post(url, json=live)
+        assert disabled.status_code == 201, disabled.text
+        assert disabled.json()["config"]["capture_javascript"] is False
+        assert api.post(url, json={**live, "capture_javascript": True}).status_code == 409
+
+        enabled_payload = {**live, "idempotency_key": "javascript-capture", "capture_javascript": True}
+        enabled = api.post(url, json=enabled_payload)
+        assert enabled.status_code == 201, enabled.text
+        assert enabled.json()["config"]["capture_javascript"] is True
+        assert api.post(url, json=enabled_payload).json()["id"] == enabled.json()["id"]
+        assert api.post(url, json={**enabled_payload, "capture_javascript": False}).status_code == 409
 
 
 def test_creation_errors_prevent_false_completion_and_cancel_prevents_retry(db):

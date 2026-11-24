@@ -106,6 +106,8 @@ class BrowserSession(Base):
     dispatch_order: Mapped[int | None]
     status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
     admitted: Mapped[bool] = mapped_column(default=False)
+    queue_reason: Mapped[str | None] = mapped_column(String(40))
+    next_attempt_at: Mapped[str | None] = mapped_column(String(40))
     workflow_outcome: Mapped[str | None] = mapped_column(String(32))
     outcome: Mapped[str | None] = mapped_column(String(32))
     elapsed_ms: Mapped[int | None]
@@ -135,11 +137,26 @@ class SessionBatchItem(Base):
     ordinal: Mapped[int] = mapped_column(primary_key=True)
     adapter: Mapped[str] = mapped_column(String(32))
     requested_profile_id: Mapped[str | None] = mapped_column(String(36))
+    launch_config: Mapped[dict | None] = mapped_column(JSON)
     session_id: Mapped[str | None] = mapped_column(ForeignKey("browser_sessions.id"), unique=True)
     status: Mapped[str] = mapped_column(String(32), default="failed")
     error: Mapped[str | None] = mapped_column(Text)
     attempts: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[str] = mapped_column(String(40), default=now)
+
+
+class WorkflowBlock(Base):
+    __tablename__ = "workflow_blocks"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    version: Mapped[int] = mapped_column(default=1)
+
+
+class WorkflowBlockRevision(Base):
+    __tablename__ = "workflow_block_versions"
+    block_id: Mapped[str] = mapped_column(ForeignKey("workflow_blocks.id"), primary_key=True)
+    version: Mapped[int] = mapped_column(primary_key=True)
+    config: Mapped[dict] = mapped_column(JSON)
 
 
 class SessionAttempt(Base):
@@ -149,6 +166,8 @@ class SessionAttempt(Base):
     number: Mapped[int]
     epoch: Mapped[int]
     proxy_lease_id: Mapped[str | None] = mapped_column(String(36))
+    proxy_check_ip: Mapped[str | None] = mapped_column(String(45))
+    recording_status: Mapped[str | None] = mapped_column(String(16))
     started_at: Mapped[str] = mapped_column(String(40), default=now)
     finished_at: Mapped[str | None] = mapped_column(String(40))
     outcome: Mapped[str | None] = mapped_column(String(32))
@@ -265,6 +284,7 @@ class ProviderObservation(Base):
     accepted: Mapped[bool | None]
     source: Mapped[str] = mapped_column(String(20), default="adscore")
     request_hash: Mapped[str | None] = mapped_column(String(64))
+    observed_ip: Mapped[str | None] = mapped_column(String(45))
     provider_version: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[str] = mapped_column(String(40), default=now)
     __table_args__ = (UniqueConstraint("session_id", "idempotency_key"),)
@@ -341,3 +361,12 @@ class SessionArtifact(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=now)
     expires_at: Mapped[str] = mapped_column(String(40), index=True)
     deleted_at: Mapped[str | None] = mapped_column(String(40))
+    attempt_id: Mapped[str | None] = mapped_column(
+        ForeignKey("session_attempts.id", name="fk_session_artifacts_attempt_id")
+    )
+    video_sequence: Mapped[int | None]
+    video_start_ms: Mapped[int | None]
+    video_duration_ms: Mapped[int | None]
+    __table_args__ = (
+        UniqueConstraint("attempt_id", "video_sequence", name="uq_session_artifacts_attempt_sequence"),
+    )

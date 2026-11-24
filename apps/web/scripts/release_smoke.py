@@ -31,7 +31,11 @@ try:
         page.get_by_role("button", name="Create session batch", exact=True).click()
         dialog = page.get_by_role("dialog")
         expect(dialog.get_by_role("heading", name="Create session batch", exact=True)).to_be_visible()
-        expect(dialog.get_by_label("Independent sessions", exact=True)).to_have_value("30")
+        expect(dialog.get_by_label("Independent sessions", exact=True)).to_have_value("1")
+        dialog.locator("summary").filter(has_text="Advanced").click()
+        expect(dialog.get_by_label("Screenshot and console capture", exact=True)).to_have_value("all")
+        expect(dialog.get_by_label("Capture JavaScript assets and execution coverage")).to_be_checked()
+        expect(dialog.get_by_role("region", name="Saved session templates")).to_have_count(0)
         dialog.get_by_role("button", name="Close dialog", exact=True).click()
         navigation.get_by_role("button", name="Fleet & settings", exact=True).click()
         page.get_by_role("button", name="Project & team", exact=True).click()
@@ -53,25 +57,28 @@ try:
 
         navigation.get_by_role("button", name="Sessions", exact=True).click()
         page.get_by_role("button", name="Create batch", exact=True).click()
-        dialog.get_by_role("button", name="Manual control", exact=True).click()
-        lifetime = dialog.get_by_label("Manual session lifetime (seconds)", exact=True)
-        expect(lifetime).to_have_value("3600")
-        expect(lifetime).to_have_attribute("max", "7200")
-        lifetime.fill("1800")
-        dialog.get_by_label("Manual idle timeout (seconds)", exact=True).fill("1900")
-        assert not lifetime.evaluate("element => element.validity.valid")
-        dialog.get_by_label("Manual idle timeout (seconds)", exact=True).fill("900")
-        assert lifetime.evaluate("element => element.validity.valid")
+        dialog.locator("summary").filter(has_text="Advanced").click()
+        user_agent = dialog.get_by_label("User-Agent", exact=True)
+        expect(dialog.get_by_label("Search User-Agent presets", exact=True)).to_be_visible()
+        expect(user_agent).to_have_value("")
+        assert user_agent.locator("option").count() >= 32
+        user_agent.select_option(label="Custom")
+        custom_agent = dialog.get_by_label("Custom User-Agent", exact=True)
+        custom_agent.fill("Unsupported β")
+        expect(custom_agent).to_have_attribute("aria-invalid", "true")
+        custom_agent.fill("ABRL QA browser")
+        expect(custom_agent).not_to_have_attribute("aria-invalid", "true")
+        dialog.get_by_label("Search User-Agent presets", exact=True).fill("Pixel 8 Pro")
+        user_agent.select_option(label="Pixel 8 Pro")
+        user_agent.select_option(label="Browser default")
+        dialog.get_by_label("Device", exact=True).select_option("tablet_landscape")
+        dialog.get_by_role("checkbox", name="Manual Google Chrome").check()
+        expect(dialog.get_by_text("Manual Google Chrome waits for operator handoff.", exact=False)).to_be_visible()
+        expect(user_agent).to_be_disabled()
+        expect(dialog.get_by_label("Device", exact=True)).to_have_value("tablet_landscape")
+        expect(dialog.get_by_label("Evidence source", exact=True)).to_have_count(0)
         dialog.get_by_role("button", name="Close dialog", exact=True).click()
-
-        batches = api.get("/batches?limit=1").json()["items"]
-        if batches:
-            navigation.get_by_role("button", name="Research", exact=True).click()
-            page.get_by_label("Research batch", exact=True).select_option(batches[0]["id"])
-            expect(page.get_by_role("columnheader", name="Primary reliability", exact=True)).to_be_visible()
-            expect(
-                page.get_by_role("columnheader", name="Operational reliability", exact=True)
-            ).to_be_visible()
+        expect(navigation.get_by_role("button", name="Research", exact=True)).to_have_count(0)
 
         navigation.get_by_role("button", name="Sites", exact=True).click()
         page.get_by_role("button", name="New site", exact=True).click()
@@ -83,7 +90,7 @@ try:
         assert not errors, errors
         browser.close()
         print(
-            "Release UI verified: persisted project quota, reloaded value, default rate 30, maximum 6000; no browser errors."
+            "Release UI verified live batch defaults, responsive presets, adapter capabilities, project quota, and site rate limits."
         )
 finally:
     response = api.put(

@@ -11,8 +11,9 @@ from abrl.db import Session
 from abrl.list_queries import text_match
 from abrl.platform_models import SessionTemplate, SessionTemplateRevision
 from abrl.platform_schemas import BatchInput, SessionTemplateInput
-from abrl.platform_service import batch_snapshot, event, list_page
+from abrl.platform_service import batch_fixture_parameter_names, batch_snapshot, event, list_page
 from abrl.platform_views import Page
+from abrl.schemas import FixtureParameterName
 
 router = APIRouter(prefix="/api/v1/session-templates")
 
@@ -27,6 +28,7 @@ class SessionTemplateView(BaseModel):
     target_version: int
     workflow_version: int
     proxy_policy_version: int | None
+    fixture_parameter_names: list[FixtureParameterName]
 
 
 def template_view(db, row, version=None):
@@ -34,6 +36,10 @@ def template_view(db, row, version=None):
     if revision is None:
         raise HTTPException(404, "Session template version not found")
     pinned = revision.config["pinned"]
+    try:
+        fixture_parameter_names = batch_fixture_parameter_names(pinned)
+    except HTTPException:
+        fixture_parameter_names = []
     return {
         "id": row.id,
         "project_id": row.project_id,
@@ -41,6 +47,7 @@ def template_view(db, row, version=None):
         "version": revision.version,
         "created_at": revision.created_at,
         "batch": {
+            "capture_javascript": False,
             **revision.config["batch"],
             "session_template_id": row.id,
             "session_template_version": revision.version,
@@ -48,6 +55,7 @@ def template_view(db, row, version=None):
         "target_version": pinned["target_version"],
         "workflow_version": pinned["workflow_version"],
         "proxy_policy_version": (pinned.get("proxy_policy") or {}).get("version"),
+        "fixture_parameter_names": fixture_parameter_names,
     }
 
 

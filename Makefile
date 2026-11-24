@@ -1,5 +1,11 @@
 SHELL := /bin/bash
-.PHONY: configure setup infra migrate dev api worker scheduler sessions sessions-vendor web verifier test lint typecheck seed-demo integration-test migration-test profile-test build down
+COMPOSE = docker compose
+ifeq ($(origin COMPOSE_FILE),undefined)
+ifneq ($(wildcard .abrl/compose-network.yml),)
+COMPOSE += -f compose.yml -f .abrl/compose-network.yml
+endif
+endif
+.PHONY: configure setup infra migrate dev dev-fixtures api worker scheduler sessions sessions-vendor web verifier test lint typecheck integration-test migration-test profile-test build down
 
 configure:
 	@python3 scripts/configure.py
@@ -11,13 +17,16 @@ setup: configure
 	cd apps/verifier && npm ci
 
 infra: configure
-	docker compose up -d --wait
+	$(COMPOSE) up -d --wait
 
 migrate:
 	uv run alembic upgrade head
 
 dev: infra migrate
 	@bash scripts/dev.sh
+
+dev-fixtures: infra migrate
+	@bash scripts/dev.sh --test-fixtures
 
 api:
 	uv run uvicorn abrl.api:app --host 127.0.0.1 --port 8400 --no-proxy-headers --no-access-log
@@ -51,9 +60,6 @@ lint:
 typecheck:
 	pnpm --dir apps/web exec tsc --noEmit
 
-seed-demo:
-	uv run python -m abrl.starter
-
 integration-test:
 	uv run python -m pytest -m integration
 
@@ -67,4 +73,4 @@ build:
 	pnpm --dir apps/web build
 
 down:
-	docker compose down
+	$(COMPOSE) down

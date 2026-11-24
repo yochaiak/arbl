@@ -3,11 +3,12 @@ import type { components } from "./schema";
 
 type Schemas = components["schemas"];
 
+export const fixtureOrigin = "http://127.0.0.1:8400";
 export const API_ROOT = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8400"
+  process.env.NEXT_PUBLIC_API_URL || fixtureOrigin
 ).replace(/\/$/, "");
 
-export const actions = [
+export const legacyActions = [
   "navigate",
   "click",
   "fill",
@@ -18,7 +19,26 @@ export const actions = [
   "assert_text",
   "assert_not_visible",
   "checkpoint",
-] as const satisfies readonly Schemas["Step"]["action"][];
+] as const satisfies readonly Schemas["WorkflowInput"]["steps"][number]["action"][];
+
+export const actions = [
+  ...legacyActions,
+  "check",
+  "uncheck",
+  "press",
+  "hover",
+  "wait_for_text",
+  "wait_for_hidden",
+  "wait_for_url",
+  "assert_url",
+  "if",
+  "repeat",
+  "use_block",
+  "open_tab",
+  "switch_tab",
+  "close_tab",
+  "expect_popup",
+] as const;
 
 export const actionLabels: Record<(typeof actions)[number], string> = {
   navigate: "Navigate",
@@ -31,12 +51,219 @@ export const actionLabels: Record<(typeof actions)[number], string> = {
   assert_text: "Assert text",
   assert_not_visible: "Assert not visible · failure guard",
   checkpoint: "Record checkpoint",
+  check: "Check checkbox",
+  uncheck: "Uncheck checkbox",
+  press: "Press key",
+  hover: "Hover",
+  wait_for_text: "Wait for text",
+  wait_for_hidden: "Wait for element to hide",
+  wait_for_url: "Wait for URL",
+  assert_url: "Assert URL",
+  if: "If condition",
+  repeat: "Repeat steps",
+  use_block: "Use reusable block",
+  open_tab: "Open tab",
+  switch_tab: "Switch tab",
+  close_tab: "Close tab",
+  expect_popup: "Click and expect popup",
 };
+
+const fixturePlaceholder = /\[([A-Za-z][A-Za-z0-9_]*)\]/;
+const fixtureParameterName = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
+const workflowParameterLimit = 16;
+const navigationUrlMaxLength = 1500;
+const fixturePaths = new Set([
+  "/lab",
+  "/lab/",
+  "/lab/interaction",
+  "/lab/form",
+  "/lab/next",
+  "/lab/finish",
+  "/lab/repeat",
+  "/lab/research",
+]);
+export const fixtureParameterMaxLength = 200;
+export const fixtureParameterValue = z
+  .string()
+  .refine((value) => !/\p{Cc}/u.test(value), "Remove control characters from the URL parameter value.")
+  .transform((value) => value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, ""))
+  .refine((value) => value.length > 0, "Enter a value for each URL parameter.")
+  .refine(
+    (value) => Array.from(value).length <= fixtureParameterMaxLength,
+    `Use at most ${fixtureParameterMaxLength} characters per URL parameter value.`,
+  );
+
+function fixturePath(url: string | null | undefined): string | null {
+  if (!url || /[ \\\p{Cc}]/u.test(url)) return null;
+  const relative = url.startsWith(`${fixtureOrigin}/`)
+    ? url.slice(fixtureOrigin.length)
+    : url;
+  const [path] = relative.split(/[?#]/u, 1);
+  return fixturePaths.has(path) ? path : null;
+}
+
+function navigationQuery(url: string) {
+  const separator = url.indexOf("?");
+  return separator < 0 ? { base: url, parts: [] } : {
+    base: url.slice(0, separator),
+    parts: url.slice(separator + 1).split("&").map((raw) => {
+      const equals = raw.indexOf("=");
+      const key = equals < 0 ? raw : raw.slice(0, equals);
+      const value = equals < 0 ? "" : raw.slice(equals + 1);
+      return { raw, key, value };
+    }),
+  };
+}
+
+function decodeUrlText(value: string, query = false) {
+  return decodeURIComponent((query ? value.replaceAll("+", " ") : value).replace(/%(?![\da-f]{2})/gi, "%25"));
+}
+
+function urlPlaceholderName(value: string) {
+  const match = fixturePlaceholder.exec(value);
+  return match?.[0] === value && fixtureParameterName.test(match[1]) ? match[1] : undefined;
+}
+
+export function workflowFixtureParameters(url: string | null | undefined): string[] {
+  if (!url || url.includes("#")) return [];
+  const names = new Set<string>();
+  for (const { value } of navigationQuery(url).parts) {
+    try {
+      const name = urlPlaceholderName(decodeUrlText(value, true));
+      if (name) names.add(name);
+    } catch {
+      // The full template validator reports malformed URL encoding.
+    }
+  }
+  return [...names];
+}
+
+type ParameterizedStep = {
+  action: (typeof actions)[number];
+  url?: string | null;
+  fixture_params?: Record<string, string | undefined> | null;
+  steps?: ParameterizedStep[] | null;
+  else_steps?: ParameterizedStep[] | null;
+};
+
+export function workflowStepsWithPaths(
+  steps: readonly ParameterizedStep[],
+  prefix = "",
+): { step: ParameterizedStep; path: string }[] {
+  return steps.flatMap((step, index) => {
+    const path = `${prefix}${index + 1}`;
+    return [
+      { step, path },
+      ...workflowStepsWithPaths(step.steps ?? [], `${path}.`),
+      ...workflowStepsWithPaths(step.else_steps ?? [], `${path}.else.`),
+    ];
+  });
+}
+
+export function workflowUrlParameterNames(steps: readonly ParameterizedStep[]): string[] {
+  const names = new Set<string>();
+  for (const { step } of workflowStepsWithPaths(steps)) {
+    if (!step.fixture_params) continue;
+    for (const name of workflowFixtureParameters(step.url)) {
+      if (Object.hasOwn(step.fixture_params, name)) names.add(name);
+    }
+  }
+  return [...names];
+}
+
+function encodeQueryValue(value: string) {
+  return encodeURIComponent(value)
+    .replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replaceAll("%20", "+");
+}
+
+export function workflowUrlPreview(
+  url: string | null | undefined,
+  values: Record<string, string | undefined>,
+): { url: string; error?: never } | { url?: never; error: string } {
+  if (!url || url.includes("#")) return { error: "Use a navigation URL without a fragment." };
+  if (Array.from(url).length > navigationUrlMaxLength || /[ \\\p{Cc}]/u.test(url)) {
+    return { error: `Use a URL of up to ${navigationUrlMaxLength} characters without spaces, backslashes, or control characters.` };
+  }
+  const wholeValueError = "Use URL parameter names of up to 32 letters, digits, or underscores as complete query values.";
+  const { base, parts } = navigationQuery(url);
+  const names = new Set<string>();
+  const encoded = [];
+  try {
+    if (fixturePlaceholder.test(decodeUrlText(base))) return { error: wholeValueError };
+    for (const part of parts) {
+      const key = decodeUrlText(part.key, true);
+      const value = decodeUrlText(part.value, true);
+      if (/\p{Cc}/u.test(key) || /\p{Cc}/u.test(value)) {
+        return { error: "Remove control characters from the URL query." };
+      }
+      if (fixturePlaceholder.test(key)) return { error: wholeValueError };
+      if (!fixturePlaceholder.test(value)) {
+        encoded.push(part.raw);
+        continue;
+      }
+      const name = urlPlaceholderName(value);
+      if (!name) return { error: wholeValueError };
+      names.add(name);
+      if (!Object.hasOwn(values, name) || values[name] == null) {
+        return { error: `Enter a value for ${name}.` };
+      }
+      const parsed = fixtureParameterValue.safeParse(values[name]);
+      if (!parsed.success) return { error: `${name}. ${parsed.error.issues[0].message}` };
+      encoded.push(`${part.key}=${encodeQueryValue(parsed.data)}`);
+    }
+  } catch {
+    return { error: "Use valid UTF-8 in the URL and parameter values." };
+  }
+  if (!names.size || Object.keys(values).some((name) => !names.has(name))) {
+    return { error: "Supply values only for placeholders used in the URL." };
+  }
+  const resolved = `${base}?${encoded.join("&")}`;
+  if (Array.from(resolved).length > navigationUrlMaxLength) {
+    return { error: `The resolved URL exceeds ${navigationUrlMaxLength} characters.` };
+  }
+  return { url: resolved };
+}
+
+export function workflowUrlPreviews(steps: readonly ParameterizedStep[], overrides: Record<string, string>) {
+  return workflowStepsWithPaths(steps).flatMap(({ step, path }) => {
+    if (!step.fixture_params) return [];
+    const values = Object.fromEntries(
+      Object.entries(step.fixture_params).map(([name, value]) => [
+        name, Object.hasOwn(overrides, name) ? overrides[name] : value,
+      ]),
+    );
+    return [{ step: path, defaults: step.fixture_params, ...workflowUrlPreview(step.url, values) }];
+  });
+}
+
+export function validateWorkflowUrlOverrides(
+  steps: readonly ParameterizedStep[],
+  draft: Record<string, string>,
+): { overrides: Record<string, string>; error?: string } {
+  const supported = new Set(workflowUrlParameterNames(steps));
+  const entries: [string, string][] = [];
+  for (const [name, value] of Object.entries(draft)) {
+    if (!supported.has(name)) return { overrides: {}, error: `This workflow does not use ${name}.` };
+    if (/^\p{White_Space}*$/u.test(value) && !/\p{Cc}/u.test(value)) continue;
+    const parsed = fixtureParameterValue.safeParse(value);
+    if (!parsed.success) return { overrides: {}, error: `${name}. ${parsed.error.issues[0].message}` };
+    entries.push([name, parsed.data]);
+  }
+  const overrides = Object.fromEntries(entries);
+  const invalid = workflowUrlPreviews(steps, overrides).find((preview) => preview.error);
+  return { overrides, error: invalid ? `Step ${invalid.step}. ${invalid.error}` : undefined };
+}
+
+export const postNavigationWaitMaxMs = 60_000;
+export const navigationTimeoutMaxMs = 120_000;
+const initialNavigationTimeoutSchema = z.number().int().min(100).max(navigationTimeoutMaxMs).nullish();
 
 export const stepSchema = z
   .object({
-    action: z.enum(actions),
+    action: z.enum(legacyActions),
     url: z.string().nullish(),
+    fixture_params: z.record(z.string().regex(fixtureParameterName), fixtureParameterValue).nullish(),
     selector: z.string().nullish(),
     name: z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/).nullish(),
     value: z.string().nullish(),
@@ -44,10 +271,20 @@ export const stepSchema = z
       .string()
       .regex(/^[A-Za-z][A-Za-z0-9_]{0,47}$/)
       .nullish(),
-    timeout_ms: z.number().int().min(100).max(15000).optional(),
+    timeout_ms: initialNavigationTimeoutSchema,
+    post_navigation_wait_ms: z.number().int().min(0).max(postNavigationWaitMaxMs).nullish(),
   })
   .superRefine((step, ctx) => {
-    let validNavigation = Boolean(step.url?.startsWith("/") && !step.url.startsWith("//"));
+    if (step.action !== "navigate" && step.timeout_ms != null && step.timeout_ms > 15_000) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["timeout_ms"],
+        message: "Version 1 non-navigation step timeouts cannot exceed 15000 milliseconds.",
+      });
+    }
+    let validNavigation =
+      Boolean(step.url?.startsWith("/") && !step.url.startsWith("//")) ||
+      fixturePath(step.url) != null;
     if (step.url?.startsWith("https://")) {
       try {
         const url = new URL(step.url);
@@ -60,8 +297,27 @@ export const stepSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["url"],
-        message: "Enter a site-relative path or an approved HTTPS URL.",
+        message: "Enter a site-relative path, a local ABRL test URL, or an approved HTTPS URL.",
       });
+    }
+    if (step.action !== "navigate" && step.post_navigation_wait_ms != null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["post_navigation_wait_ms"],
+        message: "Only Navigate steps support a wait after navigation.",
+      });
+    }
+    if (step.fixture_params != null) {
+      if (step.action !== "navigate") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["fixture_params"],
+          message: "Only Navigate steps accept URL parameters.",
+        });
+      } else {
+        const preview = workflowUrlPreview(step.url, step.fixture_params);
+        if (preview.error) ctx.addIssue({ code: "custom", path: ["fixture_params"], message: preview.error });
+      }
     }
     if (step.action === "checkpoint") {
       if (!step.name) {
@@ -99,12 +355,21 @@ export const stepSchema = z
     }
   });
 
-export const workflowSchema = z
+const legacyWorkflowSchema = z
   .object({
     name: z.string().trim().min(1, "Enter a workflow name.").max(100),
-    steps: z.array(stepSchema).min(2, "Add at least two steps.").max(40),
+    schema_version: z.literal(1),
+    steps: z.array(stepSchema).min(1, "Add a Navigate step.").max(40),
+    initial_navigation_timeout_ms: initialNavigationTimeoutSchema,
   })
   .superRefine((workflow, ctx) => {
+    if (workflowUrlParameterNames(workflow.steps).length > workflowParameterLimit) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["steps"],
+        message: `Use at most ${workflowParameterLimit} distinct URL parameters per workflow.`,
+      });
+    }
     if (workflow.steps[0]?.action !== "navigate") {
       ctx.addIssue({
         code: "custom",
@@ -114,7 +379,16 @@ export const workflowSchema = z
     }
     const last = workflow.steps.at(-1)?.action;
     const assertions = ["assert_visible", "assert_text", "assert_not_visible"];
-    if (!last || !assertions.includes(last)) {
+    if (workflow.steps.length === 1) {
+      const [step] = workflow.steps;
+      if (step.action === "navigate" && step.url?.includes("#")) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["steps", 0, "url"],
+          message: "Use a URL without a fragment for a single Navigate step.",
+        });
+      }
+    } else if (last && !assertions.includes(last)) {
       ctx.addIssue({
         code: "custom",
         path: ["steps"],
@@ -134,13 +408,66 @@ export const workflowSchema = z
     });
   });
 
-export type Step = Omit<Schemas["Step"], "timeout_ms"> & {
-  timeout_ms?: number;
-};
-export type WorkflowInput = Omit<Schemas["WorkflowInput"], "steps"> & {
-  steps: Step[];
-};
-export type Workflow = Schemas["WorkflowView"];
+export const workflowScalarSchema = z.union([z.string(), z.number(), z.boolean()]);
+export const workflowInputTypes = ["string", "number", "boolean"] as const;
+const workflowName = z.string().regex(fixtureParameterName, "Start with a letter and use up to 32 letters, digits, or underscores.");
+export const workflowInputDefinitionSchema = z.object({
+  type: z.enum(workflowInputTypes),
+  default: workflowScalarSchema.nullish(),
+  required: z.boolean().optional(),
+});
+export const conditionKinds = ["visible", "hidden", "text_contains", "url_contains", "value_equals"] as const;
+const workflowConditionSchema = z.object({
+  kind: z.enum(conditionKinds),
+  selector: z.string().nullish(),
+  text: z.string().nullish(),
+  value_ref: z.string().nullish(),
+  value: workflowScalarSchema.nullish(),
+});
+const structuredStepFields = z.object({
+  action: z.enum(actions),
+  url: z.string().nullish(),
+  fixture_params: z.record(z.string().regex(fixtureParameterName), fixtureParameterValue).nullish(),
+  selector: z.string().nullish(),
+  name: z.string().nullish(),
+  value: z.string().nullish(),
+  secret_ref: z.string().nullish(),
+  timeout_ms: initialNavigationTimeoutSchema,
+  post_navigation_wait_ms: z.number().int().min(0).max(postNavigationWaitMaxMs).nullish(),
+  save_as: z.string().nullish(),
+  value_ref: z.string().nullish(),
+  condition: workflowConditionSchema.nullish(),
+  max_iterations: z.number().int().min(1).max(100).nullish(),
+  block_id: z.string().nullish(),
+  block_version: z.number().int().positive().nullish(),
+  tab: z.string().nullish(),
+  frame: z.array(z.string()).max(12).nullish(),
+});
+export type Step = z.infer<typeof structuredStepFields> & { steps?: Step[] | null; else_steps?: Step[] | null };
+const structuredStepSchema: z.ZodType<Step> = structuredStepFields.extend({
+  get steps() { return z.array(structuredStepSchema).nullish(); },
+  get else_steps() { return z.array(structuredStepSchema).nullish(); },
+});
+const structuredWorkflowSchema = z.object({
+  name: z.string().trim().min(1, "Enter a workflow name.").max(100),
+  schema_version: z.literal(2),
+  steps: z.array(structuredStepSchema).min(1, "Add a step."),
+  initial_navigation_timeout_ms: initialNavigationTimeoutSchema,
+  inputs: z.record(workflowName, workflowInputDefinitionSchema).optional(),
+  success_check: workflowConditionSchema.nullish(),
+});
+export const workflowSchema = z.preprocess((input) => (
+  input != null && typeof input === "object" && !("schema_version" in input)
+    ? { ...input, schema_version: 1 }
+    : input
+), z.discriminatedUnion("schema_version", [legacyWorkflowSchema, structuredWorkflowSchema]));
+
+export type WorkflowScalar = z.infer<typeof workflowScalarSchema>;
+export type WorkflowInputDefinition = z.infer<typeof workflowInputDefinitionSchema>;
+export type WorkflowCondition = z.infer<typeof workflowConditionSchema>;
+export type WorkflowInput = Omit<z.infer<typeof structuredWorkflowSchema>, "schema_version"> & { schema_version?: 1 | 2 };
+export type Workflow = WorkflowInput & Pick<Schemas["WorkflowView"], "id" | "version">;
+export type WorkflowBlock = { id: string; name: string; version: number; steps: Step[] };
 
 export type TargetInput = Omit<
   Schemas["TargetInput"],
@@ -167,29 +494,36 @@ export interface SystemStatus {
   browser: { available: boolean; reason?: string };
   worker: { ready: boolean };
   adscore: { configured: boolean; ready: boolean; reason?: string };
+  recording?: { ready_workers: number; reporting_workers: number };
 }
+
+export type ValidationIssue = { path: (string | number)[]; message: string };
 
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly issues: ValidationIssue[] = [],
   ) {
     super(message);
   }
 }
 
-function errorDetail(payload: unknown): string | undefined {
+function detailFrom(payload: unknown): unknown {
   if (typeof payload !== "object" || payload === null || !("detail" in payload))
     return;
-  const { detail } = payload;
-  if (typeof detail === "string") return detail;
-  if (!Array.isArray(detail)) return;
-  return detail
-    .map((item: { loc?: unknown[]; msg?: string }) => {
-      const field = item.loc?.filter((part) => part !== "body").join(".");
-      return [field, item.msg].filter(Boolean).join(": ");
-    })
-    .join("; ");
+  return payload.detail;
+}
+
+function validationIssues(detail: unknown): ValidationIssue[] {
+  if (!Array.isArray(detail)) return [];
+  return detail.flatMap((item: unknown) => {
+    if (!item || typeof item !== "object" || !("msg" in item) || typeof item.msg !== "string") return [];
+    const path = "loc" in item && Array.isArray(item.loc)
+      ? item.loc.filter((part): part is string | number => (typeof part === "number" || typeof part === "string") && part !== "body")
+      : [];
+    return [{ path, message: item.msg.replace(/^Value error, /, "") }];
+  });
 }
 
 export const PROJECT_KEY = "abrl.project";
@@ -227,9 +561,15 @@ export async function request(
   });
   if (!response.ok) {
     const payload: unknown = await response.json().catch(() => null);
+    const detail = detailFrom(payload);
+    const issues = validationIssues(detail);
+    const message = typeof detail === "string" ? detail : issues.map(({ path, message }) => (
+      path.length ? `${path.join(".")}. ${message}` : message
+    )).join(" ");
     throw new ApiError(
-      errorDetail(payload) || `The API returned HTTP ${response.status}.`,
+      message || `The API returned HTTP ${response.status}.`,
       response.status,
+      issues,
     );
   }
   return response;

@@ -43,17 +43,21 @@ class ProfileLock:
         self.fd = os.open(self.directory / ".abrl.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         try:
             fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
+        except OSError as exc:
             os.close(self.fd)
             self.fd = None
-            raise ProfileStorageError("Profile already has a local runtime owner") from exc
+            if isinstance(exc, BlockingIOError):
+                raise ProfileStorageError("Profile already has a local runtime owner") from exc
+            raise
         return self
 
     def release(self):
         if self.fd is not None:
-            fcntl.flock(self.fd, fcntl.LOCK_UN)
-            os.close(self.fd)
-            self.fd = None
+            fd, self.fd = self.fd, None
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
 
     def __enter__(self):
         return self.acquire()

@@ -33,7 +33,10 @@ import { DetailGrid, ListControls, Modal, Pagination, Segments, useListState } f
 
 type PolicyDraft = Omit<ProxyPolicy, "id" | "version" | "created_at">;
 type InventoryDraft = ProxyInventoryInput;
+type ProxyProvider = InventoryDraft["provider"];
 const products = ["datacenter", "dedicated_datacenter", "isp", "dedicated_isp", "residential"] as const;
+const providerNames = { oxylabs: "Oxylabs", decodo: "Decodo" } as const;
+const inventoryNames = { oxylabs: "Oxylabs inventory", decodo: "Decodo US Residential" } as const;
 const gateways = {
   residential: "pr.oxylabs.io",
   isp: "isp.oxylabs.io",
@@ -41,6 +44,47 @@ const gateways = {
   datacenter: "dc.oxylabs.io",
   dedicated_datacenter: "ddc.oxylabs.io",
 } as const;
+
+function ProxyProviderField({
+  value,
+  onChange,
+}: {
+  value: ProxyProvider;
+  onChange: (provider: ProxyProvider) => void;
+}) {
+  return (
+    <Field label="Proxy provider">
+      <Select value={value} onChange={(event) => onChange(event.target.value as ProxyProvider)}>
+        <option value="oxylabs">{providerNames.oxylabs}</option>
+        <option value="decodo">{providerNames.decodo}</option>
+      </Select>
+    </Field>
+  );
+}
+
+function TargetOriginField({
+  value,
+  onChange,
+}: {
+  value?: string | null;
+  onChange: (origin: string | null) => void;
+}) {
+  return (
+    <Field
+      label="Target origin (optional)"
+      hint="Restrict assignments to one HTTPS origin. Leave blank for any eligible site."
+    >
+      <input
+        type="url"
+        maxLength={256}
+        placeholder="https://example.com"
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value || null)}
+      />
+    </Field>
+  );
+}
+
 function PolicyEditor({
   token,
   close,
@@ -55,7 +99,10 @@ function PolicyEditor({
     configuredDraft<PolicyDraft>(
       {
         name: "Continuity-first policy",
+        allowed_asns: [],
+        provider: "oxylabs",
         country: "IL",
+        target_origin: null,
         fallback_countries: [],
         products: ["isp", "dedicated_isp", "datacenter"],
         continuity: "fixed",
@@ -65,6 +112,7 @@ function PolicyEditor({
         failure_policy: "connection_recovery",
         max_replacements: 1,
         provider_resolved_ack: false,
+        initial_navigation_timeout_ms: null,
         max_latency_ms: null,
         min_transport_success_rate: null,
         connection_load: 1,
@@ -73,12 +121,29 @@ function PolicyEditor({
     ),
   );
   const patch = (next: Partial<PolicyDraft>) => setValue({ ...value, ...next });
+  const decodo = value.provider === "decodo";
+  const [asnList, setAsnList] = useState(() => (initial?.allowed_asns ?? []).join(", "));
+  function changeProvider(provider: ProxyProvider) {
+    if (provider === "decodo") {
+      patch({
+        provider,
+        country: "US",
+        fallback_countries: [],
+        products: ["residential"],
+        continuity: value.continuity === "none" ? "none" : "sticky",
+        exclusive: false,
+        allow_direct: false,
+      });
+    } else {
+      patch({ provider });
+    }
+  }
   const save = useMutation({
     mutationFn: () =>
       api(
         initial ? `/proxy-policies/${initial.id}` : "/proxy-policies",
         token,
-        { method: initial ? "PUT" : "POST", body: value },
+        { method: initial ? "PUT" : "POST", body: { ...value, allowed_asns: decodo ? asnList.split(",").map((number) => number.trim()).filter(Boolean).map(Number) : [] } },
       ),
     onSuccess: () => {
       void query.invalidateQueries({
@@ -107,36 +172,58 @@ function PolicyEditor({
                 onChange={(e) => patch({ name: e.target.value })}
               />
             </Field>
+            <ProxyProviderField value={value.provider} onChange={changeProvider} />
             <Field
               label="Required country"
-              hint="Two-letter country code. Empty means any country."
+              hint={decodo ? "Decodo uses US Residential inventory." : "Two-letter country code. Empty means any country."}
             >
               <input
                 maxLength={2}
                 pattern="[A-Z]{2}"
+                readOnly={decodo}
                 value={value.country ?? ""}
                 onChange={(e) =>
                   patch({ country: e.target.value.toUpperCase() || null })
                 }
               />
             </Field>
+            <TargetOriginField
+              value={value.target_origin}
+              onChange={(target_origin) => patch({ target_origin })}
+            />
+            {decodo && (
+              <Field label="Allowed ASNs" hint="Optional comma-separated ASN numbers. A confirmed exit outside this list blocks launch.">
+                <input
+                  value={asnList}
+                  pattern="[ ]*[0-9]+[ ]*(,[ ]*[0-9]+[ ]*)*"
+                  onChange={(event) => setAsnList(event.target.value)}
+                />
+              </Field>
+            )}
+            {!decodo && (
+              <Field
+                label="Permitted fallback countries"
+                hint="Comma-separated country codes. No implicit geographical fallback."
+              >
+                <input
+                  value={value.fallback_countries.join(", ")}
+                  onChange={(e) =>
+                    patch({
+                      fallback_countries: e.target.value
+                        .split(",")
+                        .map((v) => v.trim().toUpperCase())
+                        .filter(Boolean),
+                    })
+                  }
+                />
+              </Field>
+            )}
             <Field
-              label="Permitted fallback countries"
-              hint="Comma-separated country codes. No implicit geographical fallback."
+              label="Continuity guarantee"
+              hint={decodo
+                ? "Sticky sessions request the same Decodo exit for the chosen duration."
+                : "Strict affinity fails if the exit is unavailable. Uptime and exclusivity depend on the inventory."}
             >
-              <input
-                value={value.fallback_countries.join(", ")}
-                onChange={(e) =>
-                  patch({
-                    fallback_countries: e.target.value
-                      .split(",")
-                      .map((v) => v.trim().toUpperCase())
-                      .filter(Boolean),
-                  })
-                }
-              />
-            </Field>
-            <Field label="Continuity guarantee" hint="Strict affinity fails rather than silently changing exits; it does not guarantee uptime or exclusivity.">
               <Select
                 value={value.continuity}
                 onChange={(e) =>
@@ -145,9 +232,13 @@ function PolicyEditor({
                   })
                 }
               >
-                <option value="fixed">Fixed exit</option>
-                <option value="exclusive">Exclusive fixed exit</option>
-                <option value="strict">Strict affinity</option>
+                {!decodo && (
+                  <>
+                    <option value="fixed">Fixed exit</option>
+                    <option value="exclusive">Exclusive fixed exit</option>
+                    <option value="strict">Strict affinity</option>
+                  </>
+                )}
                 <option value="sticky">Sticky session · exit may change</option>
                 <option value="none">No continuity required</option>
               </Select>
@@ -157,6 +248,20 @@ function PolicyEditor({
                 type="number" min={1} placeholder="No threshold"
                 value={value.max_latency_ms ?? ""}
                 onChange={(e) => patch({ max_latency_ms: e.target.value === "" ? null : Number(e.target.value) })}
+              />
+            </Field>
+            <Field
+              label="Initial navigation timeout (ms)"
+              hint="Time allowed to reach DOMContentLoaded. Leave blank to use the proxy default. A step override takes precedence."
+            >
+              <input
+                type="number"
+                min={100}
+                max={120_000}
+                value={value.initial_navigation_timeout_ms ?? ""}
+                onChange={(event) => patch({
+                  initial_navigation_timeout_ms: event.target.value ? event.target.valueAsNumber : null,
+                })}
               />
             </Field>
             <Field label="Minimum transport success (%)" hint="Optional. Detector verdicts never affect this health score.">
@@ -179,34 +284,36 @@ function PolicyEditor({
               />
             </Field>
             <Field label="Maximum proxy connections per session" hint="Reserves this many connection units and enforces the same live transport limit.">
-              <input type="number" required min={1} max={32} value={value.connection_load ?? 1} onChange={(event) => patch({ connection_load: Number(event.target.value) })} />
+              <input type="number" required min={1} max={100} value={value.connection_load ?? 1} onChange={(event) => patch({ connection_load: Number(event.target.value) })} />
             </Field>
           </div>
-          <fieldset className="choice-fieldset">
-            <legend>Allowed product families</legend>
-            <div className="checkbox-grid">
-              {products.map((product) => (
-                <label className="checkbox-line" key={product}>
-                  <input
-                    type="checkbox"
-                    checked={value.products.includes(product)}
-                    onChange={(e) =>
-                      patch({
-                        products: e.target.checked
-                          ? [...value.products, product]
-                          : value.products.filter((p) => p !== product),
-                      })
-                    }
-                  />
-                  <span>{label(product)}</span>
-                </label>
-              ))}
-            </div>
-            <p>
-              Residential exits may change during a sticky session. Essential
-              continuity requires eligible fixed inventory.
-            </p>
-          </fieldset>
+          {!decodo && (
+            <fieldset className="choice-fieldset">
+              <legend>Allowed product families</legend>
+              <div className="checkbox-grid">
+                {products.map((product) => (
+                  <label className="checkbox-line" key={product}>
+                    <input
+                      type="checkbox"
+                      checked={value.products.includes(product)}
+                      onChange={(e) =>
+                        patch({
+                          products: e.target.checked
+                            ? [...value.products, product]
+                            : value.products.filter((p) => p !== product),
+                        })
+                      }
+                    />
+                    <span>{label(product)}</span>
+                  </label>
+                ))}
+              </div>
+              <p>
+                Residential exits may change during a sticky session. Essential
+                continuity requires eligible fixed inventory.
+              </p>
+            </fieldset>
+          )}
           <div className="form-grid">
             <Field label="Failure recovery">
               <Select
@@ -237,22 +344,26 @@ function PolicyEditor({
               />
             </Field>
           </div>
-          <label className="checkbox-line">
-            <input
-              type="checkbox"
-              checked={value.exclusive}
-              onChange={(e) => patch({ exclusive: e.target.checked })}
-            />
-            <span>Require an exclusive connection</span>
-          </label>
-          <label className="checkbox-line">
-            <input
-              type="checkbox"
-              checked={value.allow_direct}
-              onChange={(e) => patch({ allow_direct: e.target.checked })}
-            />
-            <span>Allow direct connectivity when explicitly eligible</span>
-          </label>
+          {!decodo && (
+            <>
+              <label className="checkbox-line">
+                <input
+                  type="checkbox"
+                  checked={value.exclusive}
+                  onChange={(e) => patch({ exclusive: e.target.checked })}
+                />
+                <span>Require an exclusive connection</span>
+              </label>
+              <label className="checkbox-line">
+                <input
+                  type="checkbox"
+                  checked={value.allow_direct}
+                  onChange={(e) => patch({ allow_direct: e.target.checked })}
+                />
+                <span>Allow direct connectivity when explicitly eligible</span>
+              </label>
+            </>
+          )}
           <label className="checkbox-line">
             <input
               type="checkbox"
@@ -303,9 +414,11 @@ function InventoryEditor({
   const [value, setValue] = useState<InventoryDraft>(() =>
     configuredDraft<InventoryDraft>(
       {
-        name: "Oxylabs inventory",
+        name: inventoryNames.oxylabs,
+        provider: "oxylabs",
         product: "residential",
         country: "IL",
+        target_origin: null,
         host: "pr.oxylabs.io",
         port: 7777,
         username_ref: "OXYLABS_USERNAME",
@@ -322,6 +435,35 @@ function InventoryEditor({
   );
   const patch = (next: Partial<InventoryDraft>) =>
     setValue({ ...value, ...next });
+  const decodo = value.provider === "decodo";
+  function changeProvider(provider: ProxyProvider) {
+    const name = value.name === inventoryNames[value.provider]
+      ? inventoryNames[provider]
+      : value.name;
+    if (provider === "decodo") {
+      patch({
+        provider,
+        name,
+        product: "residential",
+        country: "US",
+        host: "gate.decodo.com",
+        port: 7000,
+        username_ref: "DECODO_USERNAME",
+        password_ref: "DECODO_PASSWORD",
+        max_duration_minutes: !initial && value.max_duration_minutes === 30 ? 60 : value.max_duration_minutes,
+        exclusive: false,
+      });
+    } else {
+      patch({
+        provider,
+        name,
+        host: gateways[value.product],
+        port: value.product === "residential" ? 7777 : 8001,
+        username_ref: "OXYLABS_USERNAME",
+        password_ref: "OXYLABS_PASSWORD",
+      });
+    }
+  }
   const save = useMutation({
     mutationFn: () =>
       api(
@@ -343,7 +485,7 @@ function InventoryEditor({
   return (
     <Modal
       title={initial ? "Edit proxy inventory" : "Register proxy inventory"}
-      detail="Use your entitled Oxylabs endpoint and named secret references."
+      detail="Select your provider and enter named secret references."
       close={close}
     >
       <form onSubmit={submit}>
@@ -356,9 +498,11 @@ function InventoryEditor({
                 onChange={(e) => patch({ name: e.target.value })}
               />
             </Field>
+            <ProxyProviderField value={value.provider} onChange={changeProvider} />
             <Field label="Product family">
               <Select
                 value={value.product}
+                disabled={decodo}
                 onChange={(e) => {
                   const product = e.target.value as ProxyInventoryInput["product"];
                   patch({ product, host: gateways[product], port: product === "residential" ? 7777 : 8001,
@@ -377,16 +521,18 @@ function InventoryEditor({
               <input
                 required
                 pattern="[A-Za-z0-9.-]+"
+                readOnly={decodo}
                 value={value.host}
                 onChange={(e) => patch({ host: e.target.value })}
               />
             </Field>
-            <Field label="Port" hint={value.product === "residential" ? "Residential gateway uses port 7777." : "Use your assigned fixed port (8001 or above). Rotating port 8000 is unsupported."}>
+            <Field label="Port" hint={decodo ? "Decodo US Residential uses HTTPS on port 7000." : value.product === "residential" ? "Oxylabs Residential uses port 7777." : "Use your assigned fixed port (8001 or above)."}>
               <input
                 required
                 type="number"
                 min={1}
                 max={65535}
+                readOnly={decodo}
                 value={value.port}
                 onChange={(e) => patch({ port: Number(e.target.value) })}
               />
@@ -396,12 +542,17 @@ function InventoryEditor({
                 required
                 maxLength={2}
                 pattern="[A-Z]{2}"
+                readOnly={decodo}
                 value={value.country}
                 onChange={(e) =>
                   patch({ country: e.target.value.toUpperCase() })
                 }
               />
             </Field>
+            <TargetOriginField
+              value={value.target_origin}
+              onChange={(target_origin) => patch({ target_origin })}
+            />
             <Field label="Connection capacity">
               <input
                 required
@@ -513,6 +664,7 @@ interface Lease {
   epoch?: number;
   country?: string;
   product?: string;
+  provider?: ProxyProvider;
 }
 export function NetworkPage({ token }: { token: string }) {
   const [tab, setTab] = useState<"policies" | "inventory" | "leases">(
@@ -630,13 +782,17 @@ export function NetworkPage({ token }: { token: string }) {
                   </div>
                   <DetailGrid
                     items={[
+                      ["Provider", providerNames[policy.provider ?? "oxylabs"]],
                       ["Continuity", `${policy.continuity_minutes} min`],
+                      ["Initial navigation timeout", policy.initial_navigation_timeout_ms == null
+                        ? "Proxy default" : ms(policy.initial_navigation_timeout_ms)],
                       [
                         "Exclusivity",
                         policy.exclusive ? "Required" : "Shared eligible",
                       ],
                       ["Recovery", label(policy.failure_policy)],
                       ["Replacement limit", policy.max_replacements],
+                      ["Target origin", policy.target_origin ?? "Any eligible site"],
                     ]}
                   />
                   <div className="card-foot">
@@ -676,7 +832,7 @@ export function NetworkPage({ token }: { token: string }) {
       {tab === "inventory" && (
         <section className="panel data-panel">
           <SectionTitle
-            title="Oxylabs inventory"
+            title="Proxy inventory"
             detail="Provider capacity and transport measurements. Missing measurements remain unknown."
           />
           <ErrorNotice error={inventory.error} />
@@ -688,7 +844,7 @@ export function NetworkPage({ token }: { token: string }) {
                 <thead>
                   <tr>
                     <th>Inventory</th>
-                    <th>Product / country</th>
+                    <th>Provider / product</th>
                     <th>Status</th>
                     <th>Reserved connections</th>
                     <th>Transport success</th>
@@ -705,9 +861,12 @@ export function NetworkPage({ token }: { token: string }) {
                         <small className="table-subtitle mono">
                           {item.host}:{item.port}
                         </small>
+                        {item.target_origin && (
+                          <small className="table-subtitle">Target origin {item.target_origin}</small>
+                        )}
                       </td>
                       <td>
-                        {label(item.product)}
+                        {providerNames[item.provider ?? "oxylabs"]} · {label(item.product)}
                         <small className="table-subtitle">{item.country}</small>
                       </td>
                       <td>
@@ -808,6 +967,7 @@ export function NetworkPage({ token }: { token: string }) {
                         {inventory.data?.items.find(
                           (i) => i.id === lease.inventory_id,
                         )?.name ?? lease.inventory_id}
+                        <small className="table-subtitle">{providerNames[lease.provider ?? "oxylabs"]}</small>
                       </td>
                       <td>
                         <Badge value={lease.status} />

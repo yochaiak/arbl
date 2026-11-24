@@ -32,8 +32,8 @@ def record_attempt_usage(prior_metadata, metadata, *, attempt_id, proxy_config):
         if measured and isinstance(total, int) and not isinstance(total, bool) and total >= 0
         else None
     )
-    provider = "oxylabs" if proxy_config is not None else None
     policy = proxy_config or {}
+    provider = policy.get("provider", "oxylabs") if proxy_config is not None else None
     price, unit = amount(policy.get("cost_per_gb")), currency(policy.get("cost_currency"))
     estimate = (
         0.0

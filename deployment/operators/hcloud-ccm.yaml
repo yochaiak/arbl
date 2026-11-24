@@ -1,7 +1,0 @@
-replicaCount: 2
-networking:
-  enabled: true
-  clusterCIDR: 10.42.0.0/16
-nodeSelector: {abrl.io/role: control}
-additionalTolerations:
-  - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}

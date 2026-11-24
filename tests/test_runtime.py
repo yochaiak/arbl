@@ -1,4 +1,7 @@
 from datetime import UTC, datetime, timedelta
+from inspect import unwrap
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -29,6 +32,7 @@ def database(monkeypatch):
             workflow_version=1,
             target={
                 "name": "Local fixture",
+                "origin": "https://fixture.example",
                 "mode": "browser_only",
                 "session_policy": "fresh",
                 "rate_limit": 60,
@@ -51,6 +55,28 @@ def database(monkeypatch):
 
 def result(outcome, *, started=True):
     return BrowserResult(outcome=outcome, elapsed_ms=10, error=None, metadata={}, started_action=started)
+
+
+@pytest.mark.parametrize(("wait_ms", "timeout_seconds"), [(None, 60), (60_000, 120)])
+async def test_preview_timeout_includes_the_configured_navigation_wait(monkeypatch, wait_ms, timeout_seconds):
+    steps = [{"action": "navigate", "url": "/page", "post_navigation_wait_ms": wait_ms}]
+    work = SimpleNamespace(
+        mode="live",
+        target={"origin": "https://app.example", "resource_origins": []},
+        workflow={"steps": steps},
+    )
+    completed = result("completed")
+    execute = AsyncMock(return_value=completed)
+    finish = Mock()
+    monkeypatch.setattr(runtime, "claim", lambda _: work)
+    monkeypatch.setattr(runtime, "execute_workflow", execute)
+    monkeypatch.setattr(runtime, "finish", finish)
+
+    await unwrap(runtime.run_trial.fn)("trial")
+
+    assert execute.await_args.kwargs["steps"] == steps
+    assert execute.await_args.kwargs["timeout_seconds"] == timeout_seconds
+    finish.assert_called_once_with(work, completed, infrastructure_retry=False)
 
 
 def test_redelivery_and_retry_keep_one_logical_observation(database):

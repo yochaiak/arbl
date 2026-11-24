@@ -5,8 +5,11 @@ import random
 
 import pytest
 import test_platform
+from browser_fixture import create_app
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import select
-from test_platform import client, data
+from test_platform import data
 
 from abrl import experiment_api, session_runner
 from abrl.platform_models import BrowserSession, ExperimentRun, SessionBatch
@@ -20,10 +23,17 @@ def experiment_db(db, monkeypatch):
     return db
 
 
-def create_run(api, *, key="run-request-001", experiment_id=None, concurrency=1):
+def client():
+    legacy = FastAPI()
+    legacy.include_router(experiment_api.router)
+    legacy.mount("/", create_app())
+    return TestClient(legacy, headers={"Authorization": "Bearer test-token-" + "x" * 32})
+
+
+def create_run(api, *, key="run-request-001", experiment_id=None, concurrency=1, mode="live"):
     if experiment_id is None:
         groups = [
-            data(count=8, adapters=[adapter], seed=19).model_dump(mode="json")
+            data(count=8, adapters=[adapter], seed=19, mode=mode).model_dump(mode="json")
             for adapter in ("playwright", "cloakbrowser")
         ]
         response = api.post(
@@ -60,7 +70,7 @@ def test_seeded_order_spans_groups_is_idempotent_and_drives_admission(experiment
 
 def test_run_exports_every_batch_once_and_returns_frozen_evidence(experiment_db):
     with client() as api:
-        experiment_id, created = create_run(api)
+        experiment_id, created = create_run(api, mode="demo")
         base = f"/api/v1/experiments/{experiment_id}/runs/{created['id']}"
         assert api.get(base + "/export").status_code == 409
         with experiment_db.begin() as db:
@@ -120,11 +130,11 @@ def test_experiment_list_filters_order_and_pagination(experiment_db):
         experiment_id, _ = create_run(api)
         result = api.get(
             "/api/v1/experiments",
-            params={"q": "Matched", "status": "ready", "mode": "demo", "order": "name_asc", "limit": 1},
+            params={"q": "Matched", "status": "ready", "mode": "live", "order": "name_asc", "limit": 1},
         )
         assert result.status_code == 200
         assert result.json()["total"] == 1 and result.json()["items"][0]["id"] == experiment_id
         assert api.get("/api/v1/experiments?q=%25").json()["total"] == 0
-        assert api.get("/api/v1/experiments?mode=live").json()["total"] == 0
+        assert api.get("/api/v1/experiments?mode=demo").json()["total"] == 0
         assert api.get("/api/v1/experiments?offset=1").json()["items"] == []
         assert api.get("/api/v1/experiments?order=untrusted_sql").status_code == 422

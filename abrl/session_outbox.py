@@ -8,6 +8,7 @@ from sqlalchemy import select
 from abrl.config import CLICKHOUSE_PASSWORD, CLICKHOUSE_URL
 from abrl.db import Session, now
 from abrl.platform_models import SessionEvent
+from abrl.session_metadata import public_session_event_detail
 
 
 def forward_session_events():
@@ -32,7 +33,7 @@ def forward_session_events():
                     "project_id": r.project_id,
                     "session_id": r.session_id or "",
                     "kind": r.kind,
-                    "detail": json.dumps(r.detail, separators=(",", ":")),
+                    "detail": json.dumps(public_session_event_detail(r.kind, r.detail), separators=(",", ":")),
                     "created_at": r.created_at,
                 }
             )

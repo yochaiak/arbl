@@ -4,15 +4,25 @@ import asyncio
 import base64
 import json
 import os
+from collections import Counter, defaultdict
 from dataclasses import asdict
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import func, select
 
 from abrl.access import authorize, principal, scoped
+from abrl.browser_settings import (
+    adapter_contract,
+    adapter_pool,
+    effective_adapter_limit,
+    operator_controlled,
+    operator_reserved_step,
+)
+from abrl.challenge_summary import batch_challenge_summary
 from abrl.db import Session, now
+from abrl.diagnostic_bundle import build_diagnostic_bundle
 from abrl.list_queries import name_orders, ordered, text_match
 from abrl.platform_models import (
     BrowserProfile,
@@ -38,6 +48,7 @@ from abrl.platform_models import (
 )
 from abrl.platform_schemas import (
     BatchInput,
+    BatchLaunchInput,
     CommandInput,
     MemberInput,
     ProfileInput,
@@ -49,30 +60,55 @@ from abrl.platform_schemas import (
 from abrl.platform_service import (
     ACTIVE,
     TERMINAL,
+    batch_allocation_adapters,
+    batch_ip_summary,
     batch_item_view,
+    batch_proxy_check_ip_summary,
     batch_snapshot,
     batch_view,
     create_batch,
     create_batch_item,
+    dependency_versions,
+    digest,
+    effective_persistence,
     event,
+    execution_capabilities,
+    include_session_context,
+    include_session_ips,
+    include_session_recordings,
     list_page,
+    live_worker_capacity,
+    managed_diagnostic_configuration_valid,
+    manual_success_check,
     profile_view,
+    require_live_batch,
+    select_session_proxy,
     session_view,
+    session_view_with_workflow,
     settle_batch,
+    uses_retired_lab_fixture,
     utc_after,
 )
 from abrl.platform_views import (
     AdapterView,
+    BatchChallengeSummary,
+    BatchIPSummary,
     BatchItemView,
+    BatchPreflightView,
+    BatchProxyCheckIPSummary,
     BatchView,
     InventoryView,
     Page,
     PolicyView,
     ProfileView,
+    ProxyPreflightSummary,
     ScheduleView,
     SessionView,
 )
-from abrl.scheduling import next_fire, preview
+from abrl.preflight_summary import preflight_summary
+from abrl.scheduling import next_fire, preview, schedule_retirement_reason, scheduled_batch_input
+from abrl.schemas import walk_workflow_steps
+from abrl.session_metadata import public_session_event_detail
 
 router = APIRouter(prefix="/api/v1")
 
@@ -156,9 +192,12 @@ def put_member(project_id: str, data: MemberInput, request: Request):
 @router.get("/adapters", response_model=list[AdapterView])
 def adapters(request: Request):
     authorize(request)
-    from abrl.platform_service import execution_capabilities
-
-    return execution_capabilities()
+    with Session() as db:
+        _, capacities, reported_pools = live_worker_capacity(db)
+    return [
+        {**entry, "worker_capacity": capacities[entry["id"]] if adapter_pool(entry["id"]) in reported_pools else None}
+        for entry in execution_capabilities()
+    ]
 
 
 @router.get("/profiles", response_model=Page[ProfileView])
@@ -291,6 +330,7 @@ def profile_action(profile_id: str, action: str, request: Request, data: dict):
 @router.get("/sessions", response_model=Page[SessionView])
 def sessions(
     request: Request,
+    response: Response,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     status: str | None = Query(None, max_length=32),
@@ -313,7 +353,7 @@ def sessions(
             query = query.where(BrowserSession.adapter == adapter)
         if mode:
             query = query.where(BrowserSession.mode == mode)
-        return list_page(
+        page = list_page(
             db,
             ordered(
                 query,
@@ -332,13 +372,42 @@ def sessions(
             limit=limit,
             offset=offset,
         )
+        include_session_context(db, actor.project_id, page["items"])
+        if actor.role in {"operator", "owner"}:
+            include_session_ips(db, actor.project_id, page["items"])
+            include_session_recordings(db, actor.project_id, page["items"])
+            response.headers["Cache-Control"] = "no-store"
+        return page
 
 
 @router.get("/sessions/{session_id}", response_model=SessionView)
-def session_detail(session_id: str, request: Request):
+def session_detail(session_id: str, request: Request, response: Response):
     actor = authorize(request)
     with Session() as db:
-        return session_view(scoped(db, BrowserSession, session_id, actor))
+        item = session_view_with_workflow(db, scoped(db, BrowserSession, session_id, actor))
+        if actor.role in {"operator", "owner"}:
+            include_session_ips(db, actor.project_id, [item])
+            include_session_recordings(db, actor.project_id, [item])
+            response.headers["Cache-Control"] = "no-store"
+        return item
+
+
+@router.get("/sessions/{session_id}/diagnostic-bundle")
+def export_session_diagnostic_bundle(
+    session_id: str, request: Request, baseline_id: str | None = None, auto_baseline: bool = False,
+):
+    actor = authorize(request)
+    with Session() as db:
+        session = scoped(db, BrowserSession, session_id, actor)
+        bundle = build_diagnostic_bundle(db, session, baseline_id=baseline_id, auto_baseline=auto_baseline)
+    return JSONResponse(bundle, headers={
+        "Cache-Control": "no-store",
+        "Content-Disposition": 'attachment; filename="abrl-diagnostic-bundle.json"',
+    })
+
+
+def _session_event_detail(row: SessionEvent) -> dict:
+    return public_session_event_detail(row.kind, row.detail)
 
 
 @router.get("/sessions/{session_id}/events")
@@ -353,7 +422,8 @@ def session_events(
             select(SessionEvent)
             .where(SessionEvent.session_id == session_id)
             .order_by(SessionEvent.sequence.desc()),
-            lambda r: {k: getattr(r, k) for k in ("sequence", "kind", "detail", "created_at")},
+            lambda r: {"sequence": r.sequence, "kind": r.kind, "created_at": r.created_at,
+                       "detail": _session_event_detail(r)},
             limit=limit,
             offset=offset,
         )
@@ -438,7 +508,7 @@ def session_command(session_id: str, data: CommandInput, request: Request):
                         idempotency_key=prior.idempotency_key,
                     )[0]
                 )
-            return session_view(row)
+            return session_view_with_workflow(db, row)
         if row.status in TERMINAL:
             raise HTTPException(409, "Session has finished")
         discard_queued = data.command == "stop"
@@ -540,7 +610,7 @@ def session_command(session_id: str, data: CommandInput, request: Request):
             )
         )
         event(db, actor.project_id, "session_command", session_id, actor.user_id, command=data.command)
-        return session_view(row)
+        return session_view_with_workflow(db, row)
 
 
 @router.get("/batches", response_model=Page[BatchView])
@@ -572,11 +642,133 @@ def batches(
 
 
 @router.post("/batches", status_code=201, response_model=BatchView)
-def post_batch(data: BatchInput, request: Request):
+def post_batch(data: BatchLaunchInput, request: Request):
     actor = authorize(request, "operator")
     with Session.begin() as db:
         db.scalar(select(Project).where(Project.id == actor.project_id).with_for_update())
-        return batch_view(db, create_batch(db, data, actor.project_id, actor_id=actor.user_id))
+        batch = create_batch(
+            db,
+            data,
+            actor.project_id,
+            actor_id=actor.user_id,
+            require_live=True,
+            allow_test_fixture=request.scope.get("abrl.test_fixture") is True,
+        )
+        return batch_view(db, batch)
+
+
+@router.post("/batches/preflight", response_model=BatchPreflightView)
+def batch_preflight(data: BatchLaunchInput, request: Request):
+    actor = authorize(request, "operator")
+    require_live_batch(data)
+    with Session() as db:
+        config = batch_snapshot(db, data, actor.project_id)
+        if not request.scope.get("abrl.test_fixture") and uses_retired_lab_fixture(config["target"], config["workflow"]):
+            raise HTTPException(409, "The Lab site was retired. Select an authorized site.")
+        dependencies = dependency_versions(config)
+        notices = batch_readiness(db, data, config, actor.project_id)
+        return {
+            "dependencies": dependencies,
+            "expected_dependencies": digest(dependencies),
+            "count": data.count,
+            "notices": notices,
+        }
+
+
+def batch_readiness(db, data, config, project_id):
+    from abrl.session_runner import candidates
+
+    notices = []
+    capabilities = {entry["id"]: entry for entry in execution_capabilities()}
+    pools, adapter_capacity, reported_pools = live_worker_capacity(db)
+    uncertain = select(BrowserProfile.owner_session_id).where(
+        BrowserProfile.status == "quarantined", BrowserProfile.owner_session_id.is_not(None),
+    )
+    occupied, occupied_by_adapter = Counter(), Counter()
+    for pool, adapter, status, count in db.execute(
+        select(BrowserSession.pool, BrowserSession.adapter, BrowserSession.status, func.count())
+        .where(BrowserSession.status.in_(ACTIVE) | BrowserSession.id.in_(uncertain))
+        .group_by(BrowserSession.pool, BrowserSession.adapter, BrowserSession.status)
+    ):
+        if status in ACTIVE:
+            occupied[pool] += count
+        occupied_by_adapter[adapter] += count
+    project = db.get(Project, project_id)
+    if project is not None and data.concurrency > project.concurrency:
+        notices.append({"code": "project_capacity", "message": f"This project can run up to {project.concurrency} sessions at once"})
+    groups = config.get("group_launch_configs") or []
+    if groups:
+        entries = [
+            (group.adapter, [*group.profile_ids, *([None] * (group.count - len(group.profile_ids)))], settings)
+            for group, settings in zip(data.session_groups, groups, strict=True)
+        ]
+    else:
+        profiles_by_adapter = defaultdict(list)
+        for index, adapter in enumerate(batch_allocation_adapters(db, data, project_id, data.seed or 0)):
+            profiles_by_adapter[adapter].append(data.profile_ids[index] if data.profile_ids else None)
+        entries = [(adapter, assigned, config) for adapter, assigned in profiles_by_adapter.items()]
+    ids = {profile for _, assigned, _ in entries for profile in assigned if profile}
+    profiles = {
+        row.id: row for row in db.scalars(select(BrowserProfile).where(
+            BrowserProfile.project_id == project_id, BrowserProfile.id.in_(ids)
+        ))
+    } if ids else {}
+    reserved = set(db.scalars(select(BrowserSession.profile_id).where(
+        BrowserSession.profile_id.in_(ids), BrowserSession.status.not_in(TERMINAL)
+    ))) if ids else set()
+    inventory = []
+    if any(settings.get("proxy_policy") for _, _, settings in entries):
+        inventory = candidates(db, project_id, config["target"], lock_inventory=False)
+    for index, (adapter, assigned, settings) in enumerate(entries, start=1):
+        capability = capabilities.get(adapter, {})
+        group_number = index if groups else None
+
+        def notice(code, message):
+            notices.append({"code": code, "message": message, "group": group_number})
+
+        name = capability.get("name") or adapter
+        if not capability.get("available") and not adapter_capacity[adapter]:
+            notice("adapter_unavailable", capability.get("reason") or "Browser unavailable")
+        pool = adapter_pool(adapter)
+        if occupied_by_adapter[adapter] >= effective_adapter_limit(adapter, capability.get("max_concurrency")):
+            notice("adapter_capacity", f"{name} has reached its session limit")
+        if pool not in pools or (pool in reported_pools and not adapter_capacity[adapter]):
+            notice("worker_unavailable", f"Waiting for a {pool} worker that supports {name}")
+        elif occupied[pool] >= pools[pool] or (
+            pool in reported_pools and occupied_by_adapter[adapter] >= adapter_capacity[adapter]
+        ):
+            notice("worker_capacity", f"Worker slots for {name} are currently busy")
+        persistence_modes = {effective_persistence(settings)} if None in assigned else set()
+        for profile_id in assigned:
+            if not profile_id:
+                continue
+            profile = profiles.get(profile_id)
+            if not profile or profile.adapter != adapter:
+                notice("profile_incompatible", "A requested profile is unavailable or uses a different browser")
+                continue
+            persistence_modes.add(effective_persistence(settings, profile))
+            if profile.status != "available" or profile.owner_session_id or profile.id in reserved:
+                notice("profile_busy", f"Profile is busy: {profile.name}")
+        if operator_controlled(adapter):
+            if not manual_success_check(config["workflow"]):
+                notice("operator_success_check_required", "Manual Chrome requires a workflow with a success assertion")
+            if any(operator_reserved_step(adapter, step["action"]) for step in walk_workflow_steps(config["workflow"]["steps"])):
+                notice("operator_reserved_steps", "The operator performs browser interactions before handoff")
+        if any(
+            config.get("owned_diagnostic") and not managed_diagnostic_configuration_valid(adapter, persistence, config["target"])
+            for persistence in persistence_modes or {effective_persistence(settings)}
+        ):
+            notice("diagnostic_configuration", "Managed diagnostics need a fresh automated session on the owned fixture")
+        contract = adapter_contract(adapter)
+        if "persistent" in persistence_modes and contract.features["persistent_profiles"] == "requires_entitlement":
+            notice("persistent_profile_entitlement", f"{name} checks profile import and export entitlement at launch")
+        if policy := settings.get("proxy_policy"):
+            choice = select_session_proxy(config, policy, adapter, inventory)
+            if choice["status"] == "unavailable":
+                notices.append({"code": "proxy_capacity", "message": "Waiting for an eligible proxy binding", "group": group_number})
+            elif choice["status"] == "direct":
+                notices.append({"code": "proxy_direct_fallback", "message": "This policy permits direct connectivity while no eligible proxy is available", "group": group_number})
+    return list({(n["code"], n["message"], n["group"]): n for n in notices}.values())
 
 
 @router.get("/batches/{batch_id}/items", response_model=Page[BatchItemView])
@@ -594,6 +786,31 @@ def batch_items(
             batch_item_view,
             limit=limit,
             offset=offset,
+        )
+
+
+@router.get("/batches/{batch_id}/ip-summary", response_model=BatchIPSummary)
+def get_batch_ip_summary(batch_id: str, request: Request):
+    actor = authorize(request)
+    with Session() as db:
+        return batch_ip_summary(db, scoped(db, SessionBatch, batch_id, actor))
+
+
+@router.get("/batches/{batch_id}/challenge-summary", response_model=BatchChallengeSummary)
+def get_batch_challenge_summary(batch_id: str, request: Request, response: Response):
+    actor = authorize(request)
+    response.headers["Cache-Control"] = "no-store"
+    with Session() as db:
+        return batch_challenge_summary(db, scoped(db, SessionBatch, batch_id, actor))
+
+
+@router.get("/batches/{batch_id}/proxy-check-ip-summary", response_model=BatchProxyCheckIPSummary)
+def get_batch_proxy_check_ip_summary(batch_id: str, request: Request, response: Response):
+    actor = authorize(request)
+    response.headers["Cache-Control"] = "no-store"
+    with Session() as db:
+        return batch_proxy_check_ip_summary(
+            db, scoped(db, SessionBatch, batch_id, actor), show_ips=actor.role in {"operator", "owner"}
         )
 
 
@@ -618,6 +835,8 @@ def retry_batch_creation(
             return batch_view(db, row)
         if row.status in ("cancelled", "cancelling") or db.get(ResearchSnapshot, batch_id):
             raise HTTPException(409, "Cancelled or reported batches cannot resume creation")
+        if row.config.get("mode") != "live":
+            raise HTTPException(409, "Historical simulated batches cannot create new sessions")
         for run in db.scalars(
             select(ExperimentRun)
             .join(Experiment)
@@ -725,14 +944,25 @@ def inventory_view(r):
 
 
 def schedule_view(r):
+    retirement = schedule_retirement_reason(r.config)
     return {
         "id": r.id,
         "version": r.version,
-        "enabled": r.enabled,
-        "next_fire_at": r.next_fire_at,
+        "enabled": r.enabled and retirement is None,
+        "next_fire_at": r.next_fire_at if retirement is None else None,
+        "pause_reason": retirement,
+        "dependencies": dependency_versions(r.config["pinned"]) if r.config.get("pinned") else None,
         "created_at": r.created_at,
-        **{k: v for k, v in r.config.items() if k != "pinned"},
+        **{k: v for k, v in r.config.items() if k not in ("pinned", "batch")},
+        "batch": {"capture_javascript": False, **r.config["batch"]},
     }
+
+
+@router.get("/proxy-preflight/summary", response_model=ProxyPreflightSummary)
+def get_proxy_preflight_summary(request: Request, limit: int = Query(200, ge=1, le=1000)):
+    actor = authorize(request)
+    with Session() as db:
+        return preflight_summary(db, actor.project_id, limit)
 
 
 @router.get("/proxy-policies", response_model=Page[PolicyView])
@@ -849,18 +1079,21 @@ def proxy_leases(
                 },
             ),
             lambda r: {
-                k: getattr(r, k)
-                for k in (
-                    "id",
-                    "session_id",
-                    "inventory_id",
-                    "epoch",
-                    "rationale",
-                    "status",
-                    "created_at",
-                    "expires_at",
-                    "released_at",
-                )
+                **{
+                    k: getattr(r, k)
+                    for k in (
+                        "id",
+                        "session_id",
+                        "inventory_id",
+                        "epoch",
+                        "rationale",
+                        "status",
+                        "created_at",
+                        "expires_at",
+                        "released_at",
+                    )
+                },
+                "provider": r.config.get("provider", "oxylabs"),
             },
             limit=limit,
             offset=offset,
@@ -870,6 +1103,7 @@ def proxy_leases(
 @router.post("/schedules/preview")
 def schedule_preview(data: ScheduleInput, request: Request):
     authorize(request, "operator")
+    require_live_batch(data.batch)
     try:
         return {"occurrences": preview(data.model_dump(mode="json"))}
     except ValueError as exc:
@@ -915,9 +1149,7 @@ def schedules(
 def create_schedule(data: ScheduleInput, request: Request):
     actor = authorize(request, "operator")
     with Session.begin() as db:
-        config = data.model_dump(mode="json")
-        config["start_at"] = config["start_at"] or now()
-        config["pinned"] = batch_snapshot(db, data.batch, actor.project_id)
+        config = schedule_config(db, data, actor.project_id)
         try:
             following = next_fire(config, datetime.now(UTC))
         except ValueError as exc:
@@ -932,6 +1164,27 @@ def create_schedule(data: ScheduleInput, request: Request):
         db.add(ScheduleRevision(schedule_id=row.id, version=1, config=config))
         event(db, actor.project_id, "schedule_created", actor_id=actor.user_id, schedule_id=row.id)
         return schedule_view(row)
+
+
+def schedule_config(db, data, project_id, previous=None):
+    require_live_batch(data.batch)
+    config = data.model_dump(mode="json")
+    config.pop("refresh_dependencies", None)
+    config["start_at"] = config["start_at"] or now()
+    launch_fields = {"idempotency_key", "expected_dependencies", "expected_workflow_version"}
+    saved = BatchInput.model_validate({"capture_javascript": False, **previous["batch"]}) if previous else None
+    same_settings = saved and saved.model_dump(exclude=launch_fields) == data.batch.model_dump(exclude=launch_fields)
+    if same_settings and not data.refresh_dependencies and not schedule_retirement_reason(previous):
+        config["pinned"] = previous["pinned"]
+    else:
+        config["pinned"] = batch_snapshot(db, data.batch, project_id)
+        expected = data.batch.expected_dependencies
+        if expected and digest(dependency_versions(config["pinned"])) != expected:
+            raise HTTPException(409, "Dependencies changed. Refresh batch readiness before saving.")
+    config["batch"]["expected_dependencies"] = None
+    if retirement := schedule_retirement_reason(config):
+        raise HTTPException(409, retirement)
+    return config
 
 
 @router.get("/schedules/{schedule_id}/occurrences")
@@ -960,6 +1213,8 @@ def schedule_action(schedule_id: str, action: str, request: Request):
     with Session.begin() as db:
         row = scoped(db, Schedule, schedule_id, actor)
         db.refresh(row, with_for_update=True)
+        if action in ("resume", "run-now") and (retirement := schedule_retirement_reason(row.config)):
+            raise HTTPException(409, retirement)
         if action == "pause":
             row.enabled = False
         elif action == "resume":
@@ -972,12 +1227,12 @@ def schedule_action(schedule_id: str, action: str, request: Request):
             key = request.headers.get("idempotency-key")
             if not key:
                 raise HTTPException(422, "Run now requires Idempotency-Key")
-            data = BatchInput.model_validate({**row.config["batch"], "idempotency_key": key})
+            data = scheduled_batch_input(row.config, key)
             batch = create_batch(
                 db,
                 data,
                 actor.project_id,
-                pinned={**row.config["pinned"], **data.model_dump(mode="json")},
+                pinned=row.config["pinned"],
                 actor_id=actor.user_id,
             )
             prior = db.scalar(
@@ -1085,10 +1340,7 @@ def fleet(request: Request):
                 for pool in ("standard", "vendor")
             ],
             "cost": fleet_cost(workers, pricing),
-            "integrations": {
-                "cloud_execution": bool(os.getenv("ABRL_BROWSER_IMAGE"))
-                and os.getenv("ABRL_DEPLOYMENT") == "cloud"
-            },
+            "integrations": {},
         }
 
 
@@ -1111,7 +1363,8 @@ async def platform_events(request: Request, after: int = 0):
                     )
                 )
                 values = [
-                    {"sequence": r.sequence, "kind": r.kind, "session_id": r.session_id, "detail": r.detail}
+                    {"sequence": r.sequence, "kind": r.kind, "session_id": r.session_id,
+                     "detail": _session_event_detail(r)}
                     for r in rows
                 ]
             for value in values:
@@ -1152,49 +1405,6 @@ def fleet_metrics(request: Request):
             [f"abrl_session_queue_oldest_seconds {age}", f"abrl_profiles_quarantined {quarantine}"]
         )
     return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
-
-
-@router.get("/research/comparisons")
-def comparisons(request: Request, batch_id: str):
-    from abrl.research import comparison
-
-    actor = authorize(request, "analyst")
-    with Session() as db:
-        return comparison(db, scoped(db, SessionBatch, batch_id, actor))
-
-
-@router.get("/research/export")
-def research_export(
-    request: Request, batch_id: str, format: str = Query("json", pattern="^(json|csv|pdf|html)$")
-):
-    from abrl.research import comparison, export_comparison
-
-    actor = authorize(request, "analyst")
-    with Session.begin() as db:
-        batch = scoped(db, SessionBatch, batch_id, actor)
-        db.refresh(batch, with_for_update=True)
-        if batch.status not in ("completed", "cancelled"):
-            raise HTTPException(409, "Finish the batch before exporting an immutable report")
-        from abrl.platform_models import ResearchSnapshot
-        from abrl.platform_service import digest
-
-        snapshot = db.get(ResearchSnapshot, batch_id)
-        if not snapshot:
-            data = comparison(db, batch)
-            snapshot = ResearchSnapshot(batch_id=batch_id, data=data, checksum=digest(data))
-            db.add(snapshot)
-        data = snapshot.data
-    media = {"json": "application/json", "csv": "text/csv", "html": "text/html", "pdf": "application/pdf"}[
-        format
-    ]
-    return Response(
-        export_comparison(data, format),
-        media_type=media,
-        headers={
-            "Content-Disposition": f'attachment; filename="abrl-{batch_id}.{format}"',
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
 
 
 @router.put("/proxy-inventory/{inventory_id}")
@@ -1261,9 +1471,7 @@ def update_schedule(schedule_id: str, data: ScheduleInput, request: Request):
     with Session.begin() as db:
         row = scoped(db, Schedule, schedule_id, actor)
         db.refresh(row, with_for_update=True)
-        config = data.model_dump(mode="json")
-        config["start_at"] = config["start_at"] or now()
-        config["pinned"] = batch_snapshot(db, data.batch, actor.project_id)
+        config = schedule_config(db, data, actor.project_id, previous=row.config)
         try:
             following = next_fire(config, datetime.now(UTC))
         except ValueError as exc:
@@ -1271,6 +1479,8 @@ def update_schedule(schedule_id: str, data: ScheduleInput, request: Request):
         if not following:
             raise HTTPException(422, "No future occurrences")
         row.version += 1
+        if schedule_retirement_reason(row.config):
+            row.enabled = False
         row.config = config
         row.name = data.name
         row.next_fire_at = following.isoformat()

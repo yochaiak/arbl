@@ -29,16 +29,13 @@ export type BrowserSession = Schemas["SessionView"] & {
   workflow_outcome?: string | null;
   environment_epoch?: number;
 };
-export type Preparation = Required<Schemas["Preparation"]> & {
-  lifetime_seconds: number;
-};
-export type BatchInput = Omit<
-  Schemas["BatchInput"],
-  "preparation" | "adapters"
-> & {
-  preparation: Preparation;
-  adapters: NonNullable<Schemas["BatchInput"]["adapters"]>;
-};
+type RequiredBatchField = "name" | "target_id" | "workflow_id" | "count"
+  | "concurrency" | "persistence" | "idempotency_key";
+export type BatchInput = Pick<Schemas["BatchInput"], RequiredBatchField>
+  & Partial<Omit<Schemas["BatchInput"], RequiredBatchField | "adapters">>
+  & {
+    adapters: NonNullable<Schemas["BatchInput"]["adapters"]>;
+  };
 export type Batch = Schemas["BatchView"] & {
   completed?: number;
   failed?: number;

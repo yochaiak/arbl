@@ -10,7 +10,7 @@ import {
   Play,
   Plus,
 } from "lucide-react";
-import { api, dateTime, label } from "@/lib/api";
+import { api, dateTime, label, validateWorkflowUrlOverrides, workflowUrlParameterNames } from "@/lib/api";
 import {
   type Adapter,
   type Schedule,
@@ -32,8 +32,15 @@ import {
   Select,
 } from "./ui";
 import { DetailGrid, ListControls, Modal, Pagination, useListState } from "./platform-ui";
-import { BatchFields, defaultBatch } from "./sessions";
+import { BatchFields, batchBrowserSettingsValid, defaultBatch } from "./sessions";
+import { BatchReadinessNotices, useBatchPreflight, WorkflowValuesFields } from "./batch-setup";
+import type { Target, Workflow } from "@/lib/api";
 import { ScheduleCalendar } from "./schedule-calendar";
+import { WorkflowUrlParameters } from "./workflow-url-parameters";
+
+function scheduleNeedsRevision(schedule?: Schedule): boolean {
+  return Boolean(schedule?.pause_reason || schedule?.batch.mode === "demo");
+}
 
 function ScheduleForm({
   token,
@@ -42,14 +49,19 @@ function ScheduleForm({
   close,
   initial,
 }: SharedProps & { close: () => void; initial?: Schedule }) {
-  const [value, setValue] = useState<ScheduleInput>(() =>
-    configuredDraft<ScheduleInput>(
+  const needsRevision = scheduleNeedsRevision(initial);
+  const savedSessionSettings = initial?.batch.session_groups?.length && !needsRevision
+    ? initial.batch : undefined;
+  const [value, setValue] = useState<ScheduleInput>(() => {
+    const defaults = defaultBatch(targets, workflows);
+    const draft = configuredDraft<ScheduleInput>(
       {
         name: "Scheduled workflow",
         kind: "interval",
         timezone: "Asia/Jerusalem",
         interval_seconds: 3600,
-        batch: defaultBatch(targets, workflows),
+        batch: defaults,
+        refresh_dependencies: false,
         overlap: "skip",
         misfire: "coalesce",
         grace_seconds: 900,
@@ -58,9 +70,26 @@ function ScheduleForm({
         expression: undefined,
       },
       initial,
-    ),
-  );
-  const [showBatch, setShowBatch] = useState(false);
+    );
+    if (needsRevision) {
+      draft.batch = {
+        ...defaults,
+        name: draft.batch.name,
+        target_id: targets.some((site) => site.id === draft.batch.target_id && site.live_ready !== false)
+          ? draft.batch.target_id : "",
+        workflow_id: draft.batch.workflow_id,
+        count: draft.batch.count,
+        concurrency: draft.batch.concurrency,
+        adapters: draft.batch.adapters,
+        persistence: draft.batch.persistence,
+        proxy_policy_id: draft.batch.proxy_policy_id,
+      };
+    }
+    return draft;
+  });
+  const [showBatch, setShowBatch] = useState(needsRevision);
+  const [extraTarget, setExtraTarget] = useState<Target>();
+  const [extraWorkflow, setExtraWorkflow] = useState<Workflow>();
   const query = useQueryClient();
   const adapters = useQuery({
     queryKey: platformKey(token, "adapters"),
@@ -71,19 +100,47 @@ function ScheduleForm({
     queryFn: () =>
       api<PageResult<ProxyPolicy>>("/proxy-policies?limit=100", token),
   });
+  const selectedTarget = targets.find((target) => target.id === value.batch.target_id) ?? (extraTarget?.id === value.batch.target_id ? extraTarget : undefined);
+  const selectedWorkflow = workflows.find((workflow) => workflow.id === value.batch.workflow_id) ?? (extraWorkflow?.id === value.batch.workflow_id ? extraWorkflow : undefined);
+  const pinned = Boolean(value.batch.session_template_id);
+  const steps = selectedWorkflow?.steps ?? [];
+  const hasWorkflowParameters = !pinned && workflowUrlParameterNames(steps).length > 0;
+  const overrideValues = value.batch.fixture_params ?? {};
+  const { overrides, error: parameterError } = pinned
+    ? { overrides: overrideValues, error: undefined }
+    : validateWorkflowUrlOverrides(steps, overrideValues);
+  const input = {
+    ...value.batch,
+    expected_workflow_version: pinned ? undefined : selectedWorkflow?.version,
+    fixture_params: Object.keys(overrides).length > 0 ? overrides : undefined,
+    expected_dependencies: undefined,
+  };
+  const configured = !parameterError && value.batch.mode !== "demo" && Boolean(selectedTarget && selectedWorkflow)
+    && batchBrowserSettingsValid(value.batch, adapters.data ?? []);
+  const changed = !savedSessionSettings && (!initial || needsRevision || Boolean(value.refresh_dependencies)
+    || JSON.stringify(value.batch) !== JSON.stringify(initial.batch));
+  const readiness = useBatchPreflight(token, input, configured && changed);
+  const valid = !changed || (configured && readiness.current && Boolean(readiness.data) && !readiness.error);
+  const body = {
+    ...value,
+    ...(savedSessionSettings ? { refresh_dependencies: false } : {}),
+    batch: savedSessionSettings ?? (changed ? {
+      ...input, expected_dependencies: readiness.data?.expected_dependencies,
+    } : value.batch),
+  };
   const preview = useMutation({
     mutationFn: () =>
       api<{ occurrences: Array<{ utc: string; local: string }> }>(
         "/schedules/preview",
         token,
-        { method: "POST", body: value },
+        { method: "POST", body },
       ),
   });
   const save = useMutation({
     mutationFn: () =>
       api(initial ? `/schedules/${initial.id}` : "/schedules", token, {
         method: initial ? "PUT" : "POST",
-        body: value,
+        body,
       }),
     onSuccess: () => {
       void query.invalidateQueries({
@@ -97,7 +154,7 @@ function ScheduleForm({
     setValue({ ...value, ...next });
   function submit(e: FormEvent) {
     e.preventDefault();
-    save.mutate();
+    if (valid) save.mutate();
   }
   return (
     <Modal
@@ -108,6 +165,7 @@ function ScheduleForm({
     >
       <form onSubmit={submit}>
         <div className="modal-body stack">
+          {needsRevision && <p className="notice">{initial?.pause_reason ?? "This schedule previously used simulated execution."} Save a live configuration, then resume the schedule.</p>}
           <div className="form-grid">
             <Field label="Schedule name">
               <input
@@ -241,24 +299,44 @@ function ScheduleForm({
             Repeated local times execute once, at their first occurrence.
           </div>
           <div className="subsection-header">
-            <h3>Workflow & session template</h3>
-            <button
+            <h3>{savedSessionSettings ? "Workflow & sessions" : "Workflow & session template"}</h3>
+            {!savedSessionSettings && <button
               type="button"
               className="button secondary small"
               onClick={() => setShowBatch(!showBatch)}
             >
               {showBatch ? "Collapse settings" : "Configure sessions"}
-            </button>
+            </button>}
           </div>
-          {showBatch ? (
+          {savedSessionSettings && <p className="muted small-text">This schedule runs with its saved per-session settings. You can adjust its timing here.</p>}
+          {showBatch && !savedSessionSettings ? (
             <BatchFields
               token={token}
               value={value.batch}
-              onChange={(batch) => patch({ batch })}
-              targets={targets}
-              workflows={workflows}
+              onChange={(batch, template) => {
+                const workflowChanged = batch.workflow_id !== value.batch.workflow_id;
+                const detachedDemo = value.batch.mode === "demo" && !batch.session_template_id && !template;
+                patch({ batch: {
+                  ...batch,
+                  ...(workflowChanged && !template ? {
+                    fixture_params: undefined, workflow_inputs: undefined,
+                  } : {}),
+                  ...(detachedDemo ? { mode: undefined, preparation: undefined, seed: undefined } : {}),
+                } });
+              }}
+              targets={extraTarget && !targets.some((target) => target.id === extraTarget.id) ? [...targets, extraTarget] : targets}
+              workflows={extraWorkflow && !workflows.some((workflow) => workflow.id === extraWorkflow.id) ? [...workflows, extraWorkflow] : workflows}
+              onTarget={setExtraTarget}
+              onWorkflow={setExtraWorkflow}
               adapters={adapters.data ?? []}
               policies={policies.data?.items ?? []}
+              sessionTemplates
+              launchParameters={<>
+                {!pinned && <WorkflowValuesFields workflow={selectedWorkflow}
+                  value={value.batch.workflow_inputs ?? {}} onChange={(workflow_inputs) => patch({ batch: { ...value.batch, workflow_inputs } })} />}
+                {hasWorkflowParameters && <WorkflowUrlParameters steps={steps} value={overrideValues} origin={selectedTarget?.origin}
+                  onChange={(fixture_params) => patch({ batch: { ...value.batch, fixture_params } })} />}
+              </>}
             />
           ) : (
             <DetailGrid
@@ -277,10 +355,21 @@ function ScheduleForm({
                   "Sessions",
                   `${value.batch.count} · ${value.batch.concurrency} concurrent`,
                 ],
-                ["Evidence", <Badge key="mode" value={value.batch.mode} />],
               ]}
             />
           )}
+          {initial?.dependencies && <p className="muted small-text">
+            Pinned site v{initial.dependencies.target_version} · workflow v{initial.dependencies.workflow_version}
+          </p>}
+          {initial && !pinned && !savedSessionSettings && <label className="checkbox-line">
+            <input type="checkbox" checked={value.refresh_dependencies ?? false}
+              onChange={(event) => patch({ refresh_dependencies: event.target.checked })} />
+            Refresh pinned dependency versions
+          </label>}
+          {readiness.current && readiness.isFetching && <p role="status">Checking batch readiness…</p>}
+          {readiness.current && <ErrorNotice error={readiness.error} />}
+          {readiness.current && readiness.data && <BatchReadinessNotices notices={readiness.data.notices} />}
+          {value.batch.mode === "demo" && <p className="notice">Detach this simulated template to configure live sessions.</p>}
           <div className="subsection-header">
             <h3>Upcoming executions</h3>
             <button
@@ -315,9 +404,7 @@ function ScheduleForm({
             </p>
           )}
           <ErrorNotice
-            error={
-              save.error || preview.error || adapters.error || policies.error
-            }
+            error={save.error || preview.error || adapters.error || policies.error || parameterError}
           />
         </div>
         <div className="modal-footer">
@@ -326,11 +413,7 @@ function ScheduleForm({
           </button>
           <button
             className="button primary"
-            disabled={
-              save.isPending ||
-              !value.batch.target_id ||
-              !value.batch.workflow_id
-            }
+            disabled={save.isPending || !valid}
           >
             <Plus size={16} />
             {save.isPending
@@ -364,6 +447,7 @@ function ScheduleHistory({
   return (
     <Modal title={schedule.name} detail="Execution history" close={close}>
       <div className="modal-body">
+        {schedule.pause_reason && <p className="notice">{schedule.pause_reason}</p>}
         <DetailGrid
           items={[
             ["Timezone", schedule.timezone],
@@ -508,6 +592,7 @@ export function Schedules(props: SharedProps) {
                               : (schedule.status ?? "active")
                           }
                         />
+                        {schedule.pause_reason && <small className="table-subtitle">{schedule.pause_reason}</small>}
                       </td>
                       <td>
                         {schedule.kind === "interval"
@@ -526,7 +611,7 @@ export function Schedules(props: SharedProps) {
                           <button
                             className="icon-button"
                             aria-label={`Run ${schedule.name} now`}
-                            disabled={action.isPending}
+                            disabled={action.isPending || scheduleNeedsRevision(schedule)}
                             onClick={() =>
                               action.mutate({
                                 id: schedule.id,
@@ -539,7 +624,7 @@ export function Schedules(props: SharedProps) {
                           <button
                             className="icon-button"
                             aria-label={`${schedule.enabled === false ? "Resume" : "Pause"} ${schedule.name}`}
-                            disabled={action.isPending}
+                            disabled={action.isPending || scheduleNeedsRevision(schedule)}
                             onClick={() =>
                               action.mutate({
                                 id: schedule.id,

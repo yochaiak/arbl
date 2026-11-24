@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
+from batch_picker import choose_batch_option
 from dotenv import load_dotenv
 from playwright.sync_api import expect, sync_playwright
 
@@ -19,13 +20,13 @@ client = httpx.Client(
     base_url=os.getenv("ABRL_SMOKE_API", "http://127.0.0.1:8400") + "/api/v1",
     headers={"Authorization": "Bearer " + token, "X-Project-ID": "default"}, timeout=30,
 )
-client.post("/starter").raise_for_status()
-target = next(row for row in client.get("/targets").json() if row["name"] == "ABRL controlled test site")
+client.post(os.getenv("ABRL_SMOKE_API", "http://127.0.0.1:8400") + "/test/seed").raise_for_status()
+target = next(row for row in client.get("/targets").json() if row["name"] == "ABRL schedule test site")
 workflow = next(row for row in client.get("/workflows").json() if row["name"] == "Landing check")
 stamp = str(int(time.time()))
 name = "UI reusable " + stamp
 schedule = None
-evidence = ROOT / ".abrl/ui-evidence"
+evidence = Path(os.getenv("ABRL_SMOKE_SCREENSHOTS", str(ROOT / ".abrl/ui-evidence")))
 evidence.mkdir(parents=True, exist_ok=True)
 errors = []
 queries = []
@@ -40,13 +41,15 @@ try:
         page.get_by_label("Operator token").fill(token)
         page.get_by_role("button", name="Connect", exact=True).click()
         navigation = page.get_by_role("navigation", name="Workspace")
-        navigation.get_by_role("button", name="Sessions", exact=True).click()
-        page.get_by_role("button", name="Create batch", exact=True).click()
+        navigation.get_by_role("button", name="Schedules", exact=True).click()
+        page.get_by_role("button", name="New schedule", exact=True).click()
         dialog = page.get_by_role("dialog")
-        dialog.get_by_label("Batch name", exact=True).fill(name)
-        dialog.get_by_label("Authorized site", exact=True).select_option(target["id"])
-        dialog.get_by_label("Workflow", exact=True).select_option(workflow["id"])
+        dialog.get_by_label("Schedule name").fill(name)
+        dialog.get_by_role("button", name="Configure sessions", exact=True).click()
+        choose_batch_option(dialog, "Site", target["name"])
+        choose_batch_option(dialog, "Workflow", workflow["name"])
         dialog.get_by_label("Independent sessions", exact=True).fill("1")
+        dialog.locator("summary").filter(has_text="Advanced").click()
         dialog.get_by_label("HTTP request budget per session", exact=True).fill("250")
         dialog.get_by_label("Transport budget per session (MiB)", exact=True).fill("25")
         dialog.get_by_label("Template name", exact=True).fill(name)
@@ -68,32 +71,6 @@ try:
         dialog.screenshot(path=evidence / "session-template-pinned.png")
         box = dialog.bounding_box()
         assert box and abs((box["x"] + box["width"] / 2) - 720) < 3
-        dialog.get_by_role("button", name="Review batch", exact=True).click()
-        dialog.get_by_role("button", name="Create batch", exact=True).click()
-        expect(dialog).not_to_be_visible()
-        batch = client.get("/batches", params={"q": name}).json()["items"][0]
-        assert batch["config"]["session_template_id"] == template["id"]
-        assert batch["config"]["session_template_version"] == 1
-        assert batch["config"]["request_budget"] == 250
-        page.get_by_role("button", name="Batches", exact=True).click()
-        page.get_by_label("Search batches", exact=True).fill(name)
-        expect(page.get_by_role("button", name=name, exact=True)).to_be_visible()
-        page.get_by_label("Sort batches", exact=True).select_option("name_asc")
-        page.get_by_role("button", name="Profiles", exact=True).click()
-        expect(page.get_by_role("button", name="Next page", exact=True)).to_be_enabled()
-        with page.expect_response(lambda response: "/profiles?" in response.url and "offset=50" in response.url) as next_page:
-            page.get_by_role("button", name="Next page", exact=True).click()
-        assert next_page.value.json()["offset"] == 50
-        page.get_by_label("Search profiles", exact=True).fill("UI persistent")
-        with page.expect_response(lambda response: "/profiles?" in response.url and "order=name_asc" in response.url) as filtered:
-            page.get_by_label("Sort profiles", exact=True).select_option("name_asc")
-        assert filtered.value.json()["offset"] == 0
-        assert all("ui persistent" in item["name"].lower() for item in filtered.value.json()["items"])
-
-        navigation.get_by_role("button", name="Schedules", exact=True).click()
-        page.get_by_role("button", name="New schedule", exact=True).click()
-        dialog.get_by_label("Schedule name", exact=True).fill(name)
-        dialog.get_by_role("button", name="Configure sessions", exact=True).click()
         dialog.get_by_label("Search session templates", exact=True).fill(name)
         expect(dialog.get_by_label("Saved session template", exact=True).get_by_role("option", name=name + " · v2", exact=True)).to_be_attached()
         dialog.get_by_label("Saved session template", exact=True).select_option(template["id"])
@@ -105,6 +82,9 @@ try:
         schedule = client.get("/schedules", params={"q": name}).json()["items"][0]
         assert schedule["batch"]["session_template_version"] == 1
         assert schedule["batch"]["session_template_id"] == template["id"]
+        assert schedule["batch"]["request_budget"] == 250
+        assert schedule["batch"]["artifact_policy"] == "all"
+        assert schedule["batch"]["capture_javascript"] is True
         calendar = page.get_by_role("region", name="Upcoming schedule calendar", exact=True)
         next_date = datetime.fromisoformat(schedule["next_fire_at"]).astimezone(ZoneInfo("Asia/Jerusalem"))
         date_label = next_date.strftime("%A, %b %-d, %Y")
@@ -130,7 +110,6 @@ try:
         expect(dialog).not_to_be_visible()
         assert client.get("/proxy-policies", params={"q": name}).json()["items"][0]["connection_load"] == 4
         page.get_by_role("button", name="Proxy inventory", exact=True).click()
-        expect(page.get_by_role("columnheader", name="Reserved connections", exact=True)).to_be_visible()
         page.get_by_role("button", name="Register inventory", exact=True).first.click()
         dialog.get_by_label("Inventory name", exact=True).fill(name)
         dialog.get_by_label("Enable for eligible assignments", exact=True).uncheck()
@@ -138,6 +117,7 @@ try:
         dialog.get_by_label("Proxy cost currency", exact=True).fill("USD")
         dialog.get_by_role("button", name="Register inventory", exact=True).click()
         expect(dialog).not_to_be_visible()
+        expect(page.get_by_role("columnheader", name="Reserved connections", exact=True)).to_be_visible()
         item = client.get("/proxy-inventory", params={"q": name}).json()["items"][0]
         assert item["cost_per_gb"] == 2.5 and item["cost_currency"] == "USD"
         page.get_by_label("Search inventory", exact=True).fill(name)
@@ -152,10 +132,10 @@ try:
         page.set_viewport_size({"width": 390, "height": 844})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
         page.screenshot(path=evidence / "mobile-fleet-cost.png", full_page=True)
-        assert any(parse_qs(urlparse(url).query).get("q") == [name] and "/batches?" in url for url in queries)
+        assert any(parse_qs(urlparse(url).query).get("q") == [name] and "/session-templates?" in url for url in queries)
         assert not errors, errors
         browser.close()
-        print("Template UI/API passed: immutable revisions, explicit detach, pinned batch/schedule reuse, budgets, connection capacity, currency, server filtering/order/pagination and mobile cost coverage.")
+        print("Template UI/API passed: immutable revisions, explicit detach, pinned schedule reuse, budgets, connection capacity, currency, server filtering/order/pagination and mobile cost coverage.")
 finally:
     if schedule:
         client.post(f"/schedules/{schedule['id']}/pause").raise_for_status()

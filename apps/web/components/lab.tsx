@@ -14,7 +14,6 @@ import {
   ArrowUpRight,
   CheckCircle2,
   CircleDot,
-  FlaskConical,
   Globe2,
   LayoutGrid,
   ListChecks,
@@ -24,6 +23,7 @@ import {
   Radar,
   Route,
   Terminal,
+  Video,
   CalendarClock,
   Monitor,
   Network,
@@ -38,14 +38,13 @@ import {
   api,
   dateTime,
   isActive,
-  label,
   type Run,
   type SystemStatus,
   type Target,
   type Workflow,
 } from "@/lib/api";
 import { SiteRegistry, WorkflowRegistry } from "./registry";
-import { Metric, NewRun, RunDetail, RunHistory, RunRows } from "./runs";
+import { Metric, RunDetail, RunHistory, RunRows } from "./runs";
 import {
   Badge,
   Brand,
@@ -58,7 +57,6 @@ import {
 import { BatchWizard, Sessions } from "./sessions";
 import { Schedules } from "./schedules";
 import { NetworkPage } from "./network";
-import { Research } from "./research";
 import { FleetPage } from "./fleet";
 import {
   type Project,
@@ -98,19 +96,13 @@ const pages = [
     key: "runs",
     title: "Runs",
     icon: Activity,
-    detail: "Historical browser-only runs and workflow previews. Verified comparisons live in Research.",
+    detail: "Historical workflow runs and their outcomes.",
   },
   {
     key: "schedules",
     title: "Schedules",
     icon: CalendarClock,
     detail: "Run saved workflows on a dependable, timezone-aware schedule.",
-  },
-  {
-    key: "research",
-    title: "Research",
-    icon: FlaskConical,
-    detail: "Compare supported browsers and make evidence-based decisions.",
   },
   {
     key: "network",
@@ -129,7 +121,7 @@ const pages = [
     key: "system",
     title: "Diagnostics",
     icon: Radar,
-    detail: "Check local services and review manual AdScore observations.",
+    detail: "Check runtime, verification, and recording availability.",
   },
 ] as const;
 type Page = (typeof pages)[number]["key"];
@@ -198,10 +190,10 @@ function TokenForm({ disconnected = false }: { disconnected?: boolean }) {
           <h1>
             Browser workflow
             <br />
-            research.
+            operations.
           </h1>
           <p>
-            Define repeatable workflows, run them on authorized sites, and
+            Define repeatable workflows, run them on registered sites, and
             review completion, timing, and failure evidence.
           </p>
           <div className="auth-features">
@@ -212,7 +204,7 @@ function TokenForm({ disconnected = false }: { disconnected?: boolean }) {
               <WorkflowIcon size={16} /> Workflow builder
             </span>
             <span>
-              <Activity size={16} /> Trial evidence
+              <Activity size={16} /> Session results
             </span>
           </div>
         </div>
@@ -276,29 +268,20 @@ function Overview({
   onPreview: () => void;
   onNavigate: (page: Page) => void;
 }) {
-  const query = useQueryClient();
-  const starter = useMutation({
-    mutationFn: () => api("/starter", token, { method: "POST" }),
-    onSuccess: () => {
-      void query.invalidateQueries({ queryKey: ["targets", token] });
-      void query.invalidateQueries({ queryKey: ["workflows", token] });
-    },
-  });
   const active = runs.filter((run) => isActive(run.status)).length;
   return (
     <div className="stack">
       <section className="panel overview-hero">
         <div className="hero-copy">
           <span className="eyebrow">
-            <span className="dot" /> WORKFLOW RESEARCH
+            <span className="dot" /> BROWSER OPERATIONS
           </span>
           <h2>
-            Run a controlled
-            <br className="hero-break" /> browser experiment.
+            Run workflows
+            <br className="hero-break" /> in live browsers.
           </h2>
           <p>
-            Choose a site and a workflow, then inspect trial outcomes and the
-            evidence behind them.
+            Choose a site and a workflow, then review session outcomes and retained artifacts.
           </p>
           <div className="actions">
             <button className="button primary" onClick={onCreate}>
@@ -307,21 +290,7 @@ function Overview({
             <button className="button secondary" onClick={onPreview}>
               <Route size={16} /> Workflow preview
             </button>
-            <button
-              className="button secondary"
-              disabled={starter.isPending}
-              onClick={() => starter.mutate()}
-            >
-              <FlaskConical size={16} />
-              {starter.isPending ? "Loading…" : "Load starter suite"}
-            </button>
           </div>
-          {starter.isSuccess && (
-            <span className="hero-feedback" role="status">
-              <CheckCircle2 size={15} /> Starter sites and workflows are ready.
-            </span>
-          )}
-          <ErrorNotice error={starter.error} />
         </div>
         <div className="hero-visual" aria-hidden="true">
           <div className="hero-orbit orbit-outer" />
@@ -369,14 +338,14 @@ function Overview({
       <section className="panel data-panel">
         <SectionTitle
           title="Recent runs"
-          detail="Historical browser-only execution and workflow preview results."
+          detail="Results from earlier workflow runs."
         />
         {runs.length ? (
           <RunRows runs={runs.slice(0, 6)} onOpen={onOpen} />
         ) : (
           <Empty
             title="No trial data yet"
-            detail="Workflow previews appear here. Session batches and verified comparisons have their own views."
+            detail="New workflow previews appear in Sessions."
           />
         )}
       </section>
@@ -504,37 +473,11 @@ function OperationalSummary({
   );
 }
 
-interface Diagnostic {
-  id: string;
-  created_at: string;
-  verification_status: string;
-  verdict: string | null;
-  raw_code: number | null;
-  source: string;
-}
-
-function Diagnostics({
-  token,
-  status,
-}: {
-  token: string;
-  status?: SystemStatus;
-}) {
-  const evidence = useQuery({
-    queryKey: ["diagnostics", token],
-    queryFn: ({ signal }) =>
-      api<Diagnostic[]>("/diagnostics", token, { signal }),
-    refetchInterval: 5000,
-  });
-  const entries = evidence.data ?? [];
-  const counts = new Map<string, number>();
-  entries.forEach((entry) => {
-    const key = entry.verdict || entry.verification_status;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  });
+function Diagnostics({ status }: { status?: SystemStatus }) {
+  const recording = status?.recording;
   return (
     <div className="stack">
-      <div className="metrics metrics-three">
+      <div className="metrics metrics-four">
         <Metric
           title="Standard Chromium"
           value={status?.browser.available ? "Available" : "Unavailable"}
@@ -556,72 +499,18 @@ function Diagnostics({
                 ? "Configured"
                 : "Unconfigured"
           }
-          detail={status?.adscore.reason || "Manual observations"}
+          detail={status?.adscore.reason || "Site observation connector"}
           icon={<Radar size={17} />}
         />
-      </div>
-      <section className="panel data-panel">
-        <SectionTitle
-          title="Manual AdScore observations"
-          detail="Server-side signature verification for the manual test page."
-          action={
-            <a
-              className="button secondary"
-              href={`${API_ROOT}/lab/manual`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open manual test <ArrowUpRight size={16} />
-            </a>
-          }
+        <Metric
+          title="Recording encoder"
+          value={recording?.reporting_workers ? (recording.ready_workers ? "Available" : "Unavailable") : "Unreported"}
+          detail={recording?.reporting_workers
+            ? `${recording.ready_workers} of ${recording.reporting_workers} workers ready`
+            : "Waiting for a session worker"}
+          icon={<Video size={17} />}
         />
-        <ErrorNotice error={evidence.error} />
-        {evidence.isPending ? (
-          <Loading />
-        ) : !entries.length ? (
-          <Empty
-            title="No manual observations"
-            detail="Use the manual test page once the integration is configured."
-          />
-        ) : (
-          <>
-            <ul className="diagnostic-summary">
-              {[...counts].map(([name, count]) => (
-                <li key={name}>
-                  <Badge value={name} />
-                  <strong>{count}</strong>
-                </li>
-              ))}
-            </ul>
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Recorded</th>
-                    <th scope="col">Source</th>
-                    <th scope="col">Verification</th>
-                    <th scope="col">Verdict</th>
-                    <th scope="col">Raw code</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td>{dateTime(entry.created_at)}</td>
-                      <td>{label(entry.source)}</td>
-                      <td>
-                        <Badge value={entry.verification_status} />
-                      </td>
-                      <td>{entry.verdict ? label(entry.verdict) : "—"}</td>
-                      <td className="mono">{entry.raw_code ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </section>
+      </div>
     </div>
   );
 }
@@ -637,10 +526,7 @@ function Workspace({ token }: { token: string }) {
       : "overview";
   });
   const [runId, setRunId] = useState<string | null>(null);
-  const [batchLaunch, setBatchLaunch] = useState(false);
-  const [launch, setLaunch] = useState<{ preview: Workflow | null } | null>(
-    null,
-  );
+  const [batchLaunch, setBatchLaunch] = useState<{ preview?: Workflow | null } | null>(null);
   const query = useQueryClient();
   const sites = useQuery({
     queryKey: ["targets", token],
@@ -697,7 +583,7 @@ function Workspace({ token }: { token: string }) {
     changeToken("");
   }
 
-  const create = () => setLaunch({ preview: workflows.data?.[0] ?? null });
+  const openPreview = () => setBatchLaunch({ preview: workflows.data?.[0] ?? null });
 
   return (
     <div className="workspace">
@@ -772,7 +658,7 @@ function Workspace({ token }: { token: string }) {
               <p>{current.detail}</p>
             </div>
             {["sites", "workflows", "runs"].includes(page) && (
-              <button className="button secondary" onClick={create}>
+              <button className="button secondary" onClick={openPreview}>
                 <Route size={17} /> Workflow preview
               </button>
             )}
@@ -797,8 +683,8 @@ function Workspace({ token }: { token: string }) {
                   workflows={workflows.data ?? []}
                   runs={runs.data ?? []}
                   onOpen={openRun}
-                  onCreate={() => setBatchLaunch(true)}
-                  onPreview={create}
+                  onCreate={() => setBatchLaunch({})}
+                  onPreview={openPreview}
                   onNavigate={navigate}
                 />
               )}
@@ -809,7 +695,7 @@ function Workspace({ token }: { token: string }) {
                 <WorkflowRegistry
                   token={token}
                   workflows={workflows.data ?? []}
-                  onPreview={(workflow) => setLaunch({ preview: workflow })}
+                  onPreview={(workflow) => setBatchLaunch({ preview: workflow })}
                 />
               )}
               {page === "runs" &&
@@ -824,7 +710,7 @@ function Workspace({ token }: { token: string }) {
                   <RunHistory
                     runs={runs.data ?? []}
                     onOpen={openRun}
-                    onCreate={create}
+                    onCreate={openPreview}
                   />
                 ))}
               {page === "sessions" && (
@@ -841,41 +727,22 @@ function Workspace({ token }: { token: string }) {
                   workflows={workflows.data ?? []}
                 />
               )}
-              {page === "research" && (
-                <Research
-                  token={token}
-                  targets={sites.data ?? []}
-                  workflows={workflows.data ?? []}
-                />
-              )}
               {page === "network" && <NetworkPage token={token} />}
               {page === "fleet" && <FleetPage token={token} />}
               {page === "system" && (
-                <Diagnostics token={token} status={status.data} />
+                <Diagnostics status={status.data} />
               )}
             </>
           )}
         </div>
       </main>
-      {launch && (
-        <NewRun
-          token={token}
-          targets={sites.data ?? []}
-          workflows={workflows.data ?? []}
-          preview={launch.preview}
-          close={() => setLaunch(null)}
-          onRun={(run) => {
-            setLaunch(null);
-            openRun(run.id);
-          }}
-        />
-      )}
       {batchLaunch && (
         <BatchWizard
           token={token}
           targets={sites.data ?? []}
           workflows={workflows.data ?? []}
-          close={() => setBatchLaunch(false)}
+          preview={batchLaunch.preview}
+          close={() => setBatchLaunch(null)}
           onCreated={() => navigate("sessions")}
         />
       )}
@@ -907,7 +774,7 @@ function Session() {
   );
 }
 
-export function Lab() {
+export function BrowserWorkspace() {
   const [client] = useState(
     () =>
       new QueryClient({

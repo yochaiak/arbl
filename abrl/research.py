@@ -27,6 +27,7 @@ from abrl.platform_models import (
     SessionBatchItem,
 )
 from abrl.reports import wilson
+from abrl.session_metadata import redact_session_metadata, redact_session_text
 
 TERMINAL = {"completed", "failed", "blocked", "cancelled", "needs_reconciliation"}
 VERIFIED_SOURCES = {"adscore", "controlled_site", "site_connector"}
@@ -150,7 +151,7 @@ def _cluster_pair_test(a: list[dict], b: list[dict], seed: int) -> tuple[float |
 
 
 def _environment(session: BrowserSession, config: dict) -> dict:
-    metadata = session.metadata_json or {}
+    metadata = redact_session_metadata(session.metadata_json)
     proxy = metadata.get("proxy") or {}
     if not isinstance(proxy, dict):
         proxy = {}
@@ -374,7 +375,7 @@ def _batch_trials(db, batch: SessionBatch) -> list[dict]:
                 "cost": cost,
                 "cost_details": cost_details,
                 "cost_basis": cost_basis if cost is not None else "unknown",
-                "error": session.error,
+                "error": redact_session_text(session.error),
                 **verification,
                 "observations": observations,
                 "attempts": [

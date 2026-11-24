@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Boxes,
-  CheckCircle2,
   Cpu,
   Plus,
   Server,
@@ -19,7 +18,6 @@ import {
   type Project,
   type PageResult,
   platformKey,
-  humanValue,
 } from "@/lib/platform";
 import {
   Badge,
@@ -30,7 +28,7 @@ import {
   SectionTitle,
   Select,
 } from "./ui";
-import { ListControls, Modal, Pagination, Segments, useListState } from "./platform-ui";
+import { DetailGrid, ListControls, Modal, Pagination, Segments, useListState } from "./platform-ui";
 import { Metric } from "./runs";
 interface Fleet {
   active: number;
@@ -54,7 +52,6 @@ interface Fleet {
     unknown_components?: string[];
     missing_prices_or_identity?: string[];
   };
-  integrations: Record<string, unknown>;
 }
 interface Member {
   user_id: string;
@@ -108,7 +105,7 @@ function MemberForm({ token, close }: { token: string; close: () => void }) {
           <Field label="Project role">
             <Select value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="viewer">Viewer · read-only access</option>
-              <option value="analyst">Analyst · research and reports</option>
+              <option value="analyst">Analyst · session data and reports</option>
               <option value="operator">
                 Operator · execute and manage sessions
               </option>
@@ -163,7 +160,7 @@ function ProjectForm({
       detail={
         initial
           ? "Control the current project's admission limit. Global, target, and provider limits still apply."
-          : "Isolate members, configurations, and research evidence."
+          : "Isolate members, configurations, and session data."
       }
       close={close}
     >
@@ -242,6 +239,8 @@ export function FleetPage({ token }: { token: string }) {
     queryFn: () => api<Project[]>("/projects", token),
   });
   const data = fleet.data;
+  const readyWorkers = data?.workers.filter((worker) => worker.ready) ?? [];
+  const localCapacity = readyWorkers.reduce((total, worker) => total + worker.capacity, 0);
   const selectedProject = projects.data?.find((p) => p.id === currentProject());
   const owner = selectedProject?.role === "owner";
   return (
@@ -295,19 +294,19 @@ export function FleetPage({ token }: { token: string }) {
                   <Metric
                     title="Active browsers"
                     value={String(data.active)}
-                    detail={`${data.global_limit} global hard limit`}
+                    detail={`${data.global_limit} workspace safety limit`}
                     icon={<Activity size={17} />}
                   />
                   <Metric
                     title="Admitted / queued"
                     value={`${data.admitted} / ${data.queued}`}
-                    detail="Jobs scale from admitted work"
+                    detail="Local runners start admitted sessions as slots free up"
                     icon={<Boxes size={17} />}
                   />
                   <Metric
                     title="Workers ready"
-                    value={`${data.workers.filter((w) => w.ready).length} / ${data.workers.length}`}
-                    detail="Based on persisted heartbeats"
+                    value={`${readyWorkers.length} / ${data.workers.length}`}
+                    detail={`${localCapacity} configured local session slots`}
                     icon={<Server size={17} />}
                   />
                   <Metric
@@ -317,50 +316,31 @@ export function FleetPage({ token }: { token: string }) {
                         ? "Unknown"
                         : `${data.cost.hourly_estimate} ${data.cost.currency ?? ""}/h`
                     }
-                    detail="Observed runner nodes only · not billed cost"
+                    detail="Estimate from configured prices for observed runner hosts"
                     icon={<Cpu size={17} />}
                   />
                 </div>
                 <section className="panel data-panel">
-                  <SectionTitle title="Cost coverage" detail="Configured prices and measured traffic produce estimates. Missing costs remain unknown; these are not provider invoices." />
+                  <SectionTitle title="Cost coverage" detail="Configured prices and measured traffic produce estimates. Missing costs remain unknown." />
                   <dl className="integration-list">
                     <div><dt>Known observed compute subtotal</dt><dd>{data.cost.known_hourly_subtotal == null ? "Unknown" : `${data.cost.known_hourly_subtotal.toFixed(4)} ${data.cost.currency ?? ""}/h`}</dd></div>
                     <div><dt>Configured fixed infrastructure</dt><dd>{data.cost.configured_fixed_hourly == null ? "Unknown" : `${data.cost.configured_fixed_hourly.toFixed(4)} ${data.cost.currency ?? ""}/h`}</dd></div>
                     <div><dt>Complete fleet total</dt><dd>Unknown until every component is priced and reconciled</dd></div>
                     {!!data.cost.unknown_components?.length && <div><dt>Unpriced components</dt><dd>{data.cost.unknown_components.map(label).join(" · ")}</dd></div>}
-                    {!!data.cost.missing_prices_or_identity?.length && <div><dt>Missing node inputs</dt><dd>{data.cost.missing_prices_or_identity.join(" · ")}</dd></div>}
+                    {!!data.cost.missing_prices_or_identity?.length && <div><dt>Missing host inputs</dt><dd>{data.cost.missing_prices_or_identity.join(" · ")}</dd></div>}
                   </dl>
-                </section>
-                <section className="panel capacity-panel">
-                  <div>
-                    <span className="eyebrow">CLOUD CAPACITY MODEL</span>
-                    <h3>100 → 250 → 500 browsers</h3>
-                    <p>
-                      Staged live validation against owned fixtures. Hardware
-                      estimates remain benchmark hypotheses until measured.
-                    </p>
-                  </div>
-                  <div className="capacity-estimate">
-                    <strong>
-                      2,000 vCPU <span>/</span> 4,000 GiB
-                    </strong>
-                    <small>
-                      500 vendor sessions at 4 vCPU / 8 GiB, before platform
-                      overhead
-                    </small>
-                  </div>
                 </section>
                 <section className="panel data-panel">
                   <SectionTitle
                     title="Worker pools"
-                    detail="Admission enforces the narrowest project, license, proxy, target, and resource limit."
+                    detail="The standard and vendor runners use their configured local capacity, subject to project, site, license, and proxy limits."
                   />
                   {data.pools.length ? (
                     <div className="pool-grid">
                       {data.pools.map((pool) => (
                         <div key={pool.name}>
                           <Server size={20} />
-                          <strong>{pool.name}</strong>
+                          <strong>{label(pool.name)}</strong>
                           <span>
                             {pool.active} active · {pool.queued} queued
                           </span>
@@ -370,14 +350,14 @@ export function FleetPage({ token }: { token: string }) {
                   ) : (
                     <Empty
                       title="No registered pools"
-                      detail="A native local runner or cloud worker registers its pool through heartbeats."
+                      detail="Local runners register their pool through heartbeats."
                     />
                   )}
                 </section>
                 <section className="panel data-panel">
                   <SectionTitle
                     title="Runtime health"
-                    detail="Worker observations are persisted across API processes."
+                    detail="Live capacity and readiness come from local runner heartbeats."
                   />
                   <ListControls label="workers" state={workerList}>
                     <Select aria-label="Worker pool" value={workerList.filters.pool ?? ""} onChange={(event) => workerList.setFilter("pool", event.target.value)}><option value="">All pools</option><option value="standard">Standard</option><option value="vendor">Vendor</option></Select>
@@ -400,7 +380,7 @@ export function FleetPage({ token }: { token: string }) {
                           {workers.data.items.map((worker) => (
                             <tr key={worker.id}>
                               <td className="mono">{worker.id}</td>
-                              <td>{worker.pool}</td>
+                              <td>{label(worker.pool)}</td>
                               <td>{worker.capacity}</td>
                               <td>
                                 <Badge
@@ -416,30 +396,11 @@ export function FleetPage({ token }: { token: string }) {
                   ) : (
                     <Empty
                       title="No worker heartbeat"
-                      detail="Start the local session worker or deploy a cloud worker pool."
+                      detail="Start the local session runners to see their capacity and status."
                     />
                   )}
                   <Pagination total={workers.data?.total ?? 0} limit={50} offset={workerList.offset} onChange={workerList.setOffset} />
                 </section>
-                {Object.keys(data.integrations).length > 0 && (
-                  <section className="panel data-panel">
-                    <SectionTitle title="Service integration readiness" />
-                    <dl className="integration-list">
-                      {Object.entries(data.integrations).map(([key, value]) => (
-                        <div key={key}>
-                          <dt>{label(key)}</dt>
-                          <dd>
-                            {typeof value === "object" ? (
-                              <pre>{JSON.stringify(value, null, 2)}</pre>
-                            ) : (
-                              humanValue(value)
-                            )}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </section>
-                )}
               </>
             )
           )}
@@ -461,42 +422,24 @@ export function FleetPage({ token }: { token: string }) {
                     <Badge value={adapter.status} />
                   </div>
                   <h3>{adapter.name}</h3>
-                  <p>
-                    {adapter.reason ||
-                      (adapter.available
-                        ? "The supported browser runtime is available."
-                        : "Readiness has not been verified.")}
-                  </p>
-                  <div className="tag-list">
-                    {(Array.isArray(adapter.capabilities)
-                      ? adapter.capabilities
-                      : Object.entries(adapter.capabilities)
-                          .filter(([, enabled]) => enabled)
-                          .map(([key]) => key)
-                    ).map((capability) => (
-                      <span key={capability} className="pill">
-                        <CheckCircle2 size={12} />
-                        {label(capability)}
-                      </span>
-                    ))}
-                  </div>
+                  {adapter.reason && <p>{adapter.reason}</p>}
+                  <DetailGrid items={[
+                    ["Worker capacity", adapter.worker_capacity ?? "Unavailable"],
+                    ["Runtime verification", label(adapter.verification ?? "unverified")],
+                    ...(adapter.features ? [
+                      ["Batch presets", adapter.features.batch_preset_application === "context" ? "Viewport, DPR, locale, and timezone" : "Viewport only"],
+                      ["Workflow control", adapter.features.workflow_control === "operator" ? "Operator handoff" : "Automated"],
+                      ["Persistent profiles", adapter.features.persistent_profiles === "requires_entitlement" ? "License entitlement required" : "Supported"],
+                      ["Managed diagnostics", adapter.features.managed_diagnostics ? "Fresh sessions" : "Unavailable"],
+                    ] as Array<[string, string]> : []),
+                  ]} />
                   {adapter.version && (
                     <small className="mono muted">
                       Version {adapter.version}
                     </small>
                   )}
-                  {adapter.id === "cloakbrowser" && (
-                    <p className="notice small-text">
-                      Exact binary pinning and concurrency depend on your
-                      license. Free-tier version pinning is not assumed.
-                    </p>
-                  )}
-                  {adapter.id === "kameleo" && (
-                    <p className="notice small-text">
-                      Linux cloud workers require amd64 and compatible
-                      SDK/engine versions. Proxy changes stop and restart the
-                      profile.
-                    </p>
+                  {Array.isArray(adapter.limitations) && adapter.limitations.length > 0 && (
+                    <p className="notice small-text">{adapter.limitations.join(" · ")}</p>
                   )}
                 </section>
               ))}
@@ -555,8 +498,8 @@ export function FleetPage({ token }: { token: string }) {
           </section>
           <div className="notice">
             <ShieldCheck size={17} />
-            Cloud deployments require configured OIDC. Local development
-            supports the bootstrap owner token. Membership changes are audited.
+            The local workspace supports the bootstrap owner token and optional
+            organization sign-in. Membership changes are audited.
           </div>
         </>
       )}

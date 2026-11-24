@@ -21,6 +21,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflow Blocks */
+        get: operations["workflow_blocks_api_v1_workflow_blocks_get"];
+        put?: never;
+        /** Create Workflow Block */
+        post: operations["create_workflow_block_api_v1_workflow_blocks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-blocks/{block_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflow Block Versions */
+        get: operations["workflow_block_versions_api_v1_workflow_blocks__block_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-blocks/{block_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Workflow Block */
+        put: operations["update_workflow_block_api_v1_workflow_blocks__block_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/status": {
         parameters: {
             query?: never;
@@ -90,23 +142,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/targets/{target_id}/verify": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Verify Target */
-        post: operations["verify_target_api_v1_targets__target_id__verify_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/workflows": {
         parameters: {
             query?: never;
@@ -153,23 +188,6 @@ export interface paths {
         get: operations["workflow_versions_api_v1_workflows__workflow_id__versions_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/starter": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Starter */
-        post: operations["starter_api_v1_starter_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -322,23 +340,6 @@ export interface paths {
         };
         /** Events */
         get: operations["events_api_v1_runs__run_id__events_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/diagnostics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Diagnostics */
-        get: operations["diagnostics_api_v1_diagnostics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -503,6 +504,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/{session_id}/diagnostic-bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Session Diagnostic Bundle */
+        get: operations["export_session_diagnostic_bundle_api_v1_sessions__session_id__diagnostic_bundle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/{session_id}/events": {
         parameters: {
             query?: never;
@@ -572,6 +590,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/batches/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch Preflight */
+        post: operations["batch_preflight_api_v1_batches_preflight_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/batches/{batch_id}/items": {
         parameters: {
             query?: never;
@@ -581,6 +616,57 @@ export interface paths {
         };
         /** Batch Items */
         get: operations["batch_items_api_v1_batches__batch_id__items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{batch_id}/ip-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Batch Ip Summary */
+        get: operations["get_batch_ip_summary_api_v1_batches__batch_id__ip_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{batch_id}/challenge-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Batch Challenge Summary */
+        get: operations["get_batch_challenge_summary_api_v1_batches__batch_id__challenge_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{batch_id}/proxy-check-ip-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Batch Proxy Check Ip Summary */
+        get: operations["get_batch_proxy_check_ip_summary_api_v1_batches__batch_id__proxy_check_ip_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -617,6 +703,23 @@ export interface paths {
         put?: never;
         /** Batch Action */
         post: operations["batch_action_api_v1_batches__batch_id___action__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxy-preflight/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Proxy Preflight Summary */
+        get: operations["get_proxy_preflight_summary_api_v1_proxy_preflight_summary_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -796,40 +899,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/research/comparisons": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Comparisons */
-        get: operations["comparisons_api_v1_research_comparisons_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/research/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Research Export */
-        get: operations["research_export_api_v1_research_export_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/proxy-inventory/{inventory_id}": {
         parameters: {
             query?: never;
@@ -915,127 +984,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/experiments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Experiments */
-        get: operations["experiments_api_v1_experiments_get"];
-        put?: never;
-        /** Create Experiment */
-        post: operations["create_experiment_api_v1_experiments_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/experiments/{experiment_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Edit Experiment */
-        put: operations["edit_experiment_api_v1_experiments__experiment_id__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/experiments/{experiment_id}/validate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Validate Experiment */
-        post: operations["validate_experiment_api_v1_experiments__experiment_id__validate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/experiments/{experiment_id}/clone": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Clone Experiment */
-        post: operations["clone_experiment_api_v1_experiments__experiment_id__clone_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/experiments/{experiment_id}/runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Experiment Runs */
-        get: operations["experiment_runs_api_v1_experiments__experiment_id__runs_get"];
-        put?: never;
-        /** Run Experiment */
-        post: operations["run_experiment_api_v1_experiments__experiment_id__runs_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/experiments/{experiment_id}/runs/{run_id}/comparison": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Run Comparison */
-        get: operations["run_comparison_api_v1_experiments__experiment_id__runs__run_id__comparison_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/experiments/{experiment_id}/runs/{run_id}/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Run Export */
-        get: operations["run_export_api_v1_experiments__experiment_id__runs__run_id__export_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/sessions/{session_id}/artifacts": {
         parameters: {
             query?: never;
@@ -1062,6 +1010,40 @@ export interface paths {
         };
         /** Download Artifact */
         get: operations["download_artifact_api_v1_artifacts__artifact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/recordings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Session Recordings */
+        get: operations["session_recordings_api_v1_sessions__session_id__recordings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/recordings/{attempt_number}/segments/{sequence}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recording Segment */
+        get: operations["recording_segment_api_v1_sessions__session_id__recordings__attempt_number__segments__sequence__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1176,24 +1158,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/lab/research": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Research Page */
-        get: operations["research_page_lab_research_get"];
-        put?: never;
-        /** Research Callback */
-        post: operations["research_callback_lab_research_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -1249,6 +1213,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdapterFeatures */
+        AdapterFeatures: {
+            /**
+             * Batch Preset Application
+             * @enum {string}
+             */
+            batch_preset_application: "context" | "viewport_only";
+            /**
+             * Workflow Control
+             * @enum {string}
+             */
+            workflow_control: "automated" | "operator";
+            /**
+             * Persistent Profiles
+             * @enum {string}
+             */
+            persistent_profiles: "supported" | "requires_entitlement";
+            /** Managed Diagnostics */
+            managed_diagnostics: boolean;
+        } & {
+            [key: string]: unknown;
+        };
         /** AdapterView */
         AdapterView: {
             /** Id */
@@ -1267,20 +1253,84 @@ export interface components {
             version?: string | null;
             /** Max Concurrency */
             max_concurrency?: number | null;
+            features?: components["schemas"]["AdapterFeatures"] | null;
+            /** Worker Capacity */
+            worker_capacity?: number | null;
+            /**
+             * Verification
+             * @default unverified
+             * @constant
+             */
+            verification: "unverified";
         } & {
             [key: string]: unknown;
+        };
+        /** BatchChallengeSummary */
+        BatchChallengeSummary: {
+            overall: components["schemas"]["ChallengeMetrics"];
+            /** @description Overlapping diagnostics for finalized attempts. These counts do not affect the challenge rate. */
+            diagnostics: components["schemas"]["ChallengeDiagnostics"];
+            /** By Pool */
+            by_pool: components["schemas"]["ChallengeGroup_str_"][];
+            /** By Asn */
+            by_asn: components["schemas"]["ChallengeGroup_int_"][];
+            /** By Country */
+            by_country: components["schemas"]["ChallengeGroup_str_"][];
+        };
+        /** BatchDependencyVersions */
+        BatchDependencyVersions: {
+            /** Target Id */
+            target_id: string;
+            /** Target Version */
+            target_version: number;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Workflow Version */
+            workflow_version: number;
+            /** Proxy Policies */
+            proxy_policies: {
+                [key: string]: number;
+            };
+        };
+        /** BatchIPSummary */
+        BatchIPSummary: {
+            /** Expected Sessions */
+            expected_sessions: number;
+            /** Observed Sessions */
+            observed_sessions: number;
+            /** Distinct Ips */
+            distinct_ips: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "duplicate" | "unique" | "incomplete" | "pending";
         };
         /** BatchInput */
         BatchInput: {
             /**
              * Name
-             * @default Browser experiment
+             * @default Workflow batch
              */
             name: string;
             /** Target Id */
             target_id: string;
             /** Workflow Id */
             workflow_id: string;
+            /** Expected Workflow Version */
+            expected_workflow_version?: number | null;
+            /** Expected Dependencies */
+            expected_dependencies?: string | null;
+            /** Fixture Params */
+            fixture_params?: {
+                [key: string]: string;
+            } | null;
+            /** Workflow Inputs */
+            workflow_inputs?: {
+                [key: string]: string | number | boolean;
+            };
+            /** Session Groups */
+            session_groups?: components["schemas"]["SessionGroupInput"][];
             /** Session Template Id */
             session_template_id?: string | null;
             /** Session Template Version */
@@ -1297,6 +1347,13 @@ export interface components {
             concurrency: number;
             /** Adapters */
             adapters?: ("playwright" | "cloakbrowser" | "kameleo" | "manual_chrome")[];
+            /** User Agent */
+            user_agent?: string | null;
+            /** Device Preset */
+            device_preset?: ("phone_small" | "phone" | "phone_large" | "tablet" | "tablet_landscape") | null;
+            batch_presets?: components["schemas"]["BatchPresetOptions"] | null;
+            /** Referrer */
+            referrer?: string | null;
             /**
              * Persistence
              * @default fresh
@@ -1310,7 +1367,7 @@ export interface components {
             proxy_policy_id?: string | null;
             /**
              * Mode
-             * @default demo
+             * @default live
              * @enum {string}
              */
             mode: "live" | "demo";
@@ -1320,11 +1377,8 @@ export interface components {
              * @enum {string}
              */
             phase: "pilot" | "confirmation";
-            /**
-             * Seed
-             * @default 42
-             */
-            seed: number;
+            /** Seed */
+            seed?: number | null;
             /** Idempotency Key */
             idempotency_key: string;
             /**
@@ -1354,7 +1408,7 @@ export interface components {
             traffic_budget_bytes: number;
             /**
              * Artifact Policy
-             * @default none
+             * @default all
              * @enum {string}
              */
             artifact_policy: "none" | "on_failure" | "all";
@@ -1363,6 +1417,11 @@ export interface components {
              * @default 30
              */
             artifact_retention_days: number;
+            /**
+             * Capture Javascript
+             * @default true
+             */
+            capture_javascript: boolean;
             /** Cost Currency */
             cost_currency?: string | null;
             /** Cost Per Session */
@@ -1388,6 +1447,225 @@ export interface components {
             attempts: number;
             /** Created At */
             created_at: string;
+        };
+        /**
+         * BatchLaunchInput
+         * @description Settings for an immediate batch launch.
+         */
+        BatchLaunchInput: {
+            /**
+             * Name
+             * @default Workflow batch
+             */
+            name: string;
+            /** Target Id */
+            target_id: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Expected Workflow Version */
+            expected_workflow_version?: number | null;
+            /** Expected Dependencies */
+            expected_dependencies?: string | null;
+            /** Fixture Params */
+            fixture_params?: {
+                [key: string]: string;
+            } | null;
+            /** Workflow Inputs */
+            workflow_inputs?: {
+                [key: string]: string | number | boolean;
+            };
+            /** Session Groups */
+            session_groups?: components["schemas"]["SessionGroupInput"][];
+            /** Session Template Id */
+            session_template_id?: string | null;
+            /** Session Template Version */
+            session_template_version?: number | null;
+            /**
+             * Count
+             * @default 30
+             */
+            count: number;
+            /**
+             * Concurrency
+             * @default 1
+             */
+            concurrency: number;
+            /** Adapters */
+            adapters?: ("playwright" | "cloakbrowser" | "kameleo" | "manual_chrome")[];
+            /** User Agent */
+            user_agent?: string | null;
+            /** Device Preset */
+            device_preset?: ("phone_small" | "phone" | "phone_large" | "tablet" | "tablet_landscape") | null;
+            batch_presets?: components["schemas"]["BatchPresetOptions"] | null;
+            /** Referrer */
+            referrer?: string | null;
+            /**
+             * Persistence
+             * @default fresh
+             * @enum {string}
+             */
+            persistence: "fresh" | "persistent";
+            /** Profile Ids */
+            profile_ids?: string[];
+            preparation?: components["schemas"]["Preparation"];
+            /** Proxy Policy Id */
+            proxy_policy_id?: string | null;
+            /**
+             * Mode
+             * @default live
+             * @enum {string}
+             */
+            mode: "live" | "demo";
+            /**
+             * Phase
+             * @default pilot
+             * @enum {string}
+             */
+            phase: "pilot" | "confirmation";
+            /** Seed */
+            seed?: number | null;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Hypothesis
+             * @default
+             */
+            hypothesis: string;
+            /**
+             * Reliability Target
+             * @default 0.95
+             */
+            reliability_target: number;
+            /**
+             * Timeout Seconds
+             * @default 600
+             */
+            timeout_seconds: number;
+            /**
+             * Request Budget
+             * @default 1000
+             */
+            request_budget: number;
+            /**
+             * Traffic Budget Bytes
+             * @default 104857600
+             */
+            traffic_budget_bytes: number;
+            /**
+             * Artifact Policy
+             * @default all
+             * @enum {string}
+             */
+            artifact_policy: "none" | "on_failure" | "all";
+            /**
+             * Artifact Retention Days
+             * @default 30
+             */
+            artifact_retention_days: number;
+            /**
+             * Capture Javascript
+             * @default true
+             */
+            capture_javascript: boolean;
+            /** Cost Currency */
+            cost_currency?: string | null;
+            /** Cost Per Session */
+            cost_per_session?: number | null;
+        };
+        /** BatchPreflightNotice */
+        BatchPreflightNotice: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Group */
+            group?: number | null;
+        };
+        /** BatchPreflightView */
+        BatchPreflightView: {
+            dependencies: components["schemas"]["BatchDependencyVersions"];
+            /** Expected Dependencies */
+            expected_dependencies: string;
+            /** Count */
+            count: number;
+            /** Notices */
+            notices: components["schemas"]["BatchPreflightNotice"][];
+        };
+        /** BatchPresetOptions */
+        BatchPresetOptions: {
+            /**
+             * Catalog Version
+             * @default 1
+             * @constant
+             */
+            catalog_version: 1;
+            /**
+             * Mode
+             * @default fixed
+             * @enum {string}
+             */
+            mode: "fixed" | "round_robin" | "seeded";
+            /** Presets */
+            presets: ("desktop_1280" | "desktop_1440" | "compact_390" | "tablet_768")[];
+            /** Locales */
+            locales?: ("en-US" | "en-GB" | "he-IL")[];
+        };
+        /** BatchPresetView */
+        BatchPresetView: {
+            /**
+             * Catalog Version
+             * @constant
+             */
+            catalog_version: 1;
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "desktop_1280" | "desktop_1440" | "compact_390" | "tablet_768";
+            /**
+             * Application
+             * @enum {string}
+             */
+            application: "context" | "viewport_only";
+            /**
+             * Device Class
+             * @enum {string}
+             */
+            device_class: "desktop" | "adapter_managed";
+            /**
+             * Viewport Class
+             * @enum {string}
+             */
+            viewport_class: "desktop" | "phone" | "tablet";
+            viewport: components["schemas"]["PresetViewport"];
+            /** Device Pixel Ratio */
+            device_pixel_ratio: number | null;
+            /** Locale */
+            locale: ("en-US" | "en-GB" | "he-IL") | null;
+            /** Timezone */
+            timezone: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "fixed" | "round_robin" | "seeded";
+            /** Seed */
+            seed: number;
+        };
+        /** BatchProxyCheckIPSummary */
+        BatchProxyCheckIPSummary: {
+            /** Expected Sessions */
+            expected_sessions: number;
+            /** Checked Sessions */
+            checked_sessions: number;
+            /** Distinct Ips */
+            distinct_ips: number;
+            /** Unique Sessions */
+            unique_sessions: number;
+            /** Duplicate Sessions */
+            duplicate_sessions: number;
+            /** Duplicate Groups */
+            duplicate_groups: components["schemas"]["ProxyCheckDuplicateGroup"][];
         };
         /** BatchView */
         BatchView: {
@@ -1422,6 +1700,164 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** ChallengeDiagnostics */
+        ChallengeDiagnostics: {
+            /** Preflight Reports */
+            preflight_reports: number;
+            /**
+             * Preflight Timeout Sessions
+             * @description Preflight reports with at least one recorded probe or overall deadline timeout.
+             */
+            preflight_timeout_sessions: number;
+            /**
+             * Missing Lookup Fields
+             * @description Count of preflight reports without usable evidence for each lookup field. Omitted fields have zero.
+             */
+            missing_lookup_fields: {
+                [key: string]: number;
+            };
+            /**
+             * Missing Lookup Dataset Statuses
+             * @description Breakdown of recorded local dataset statuses for missing lookup fields. Older reports may omit them.
+             */
+            missing_lookup_dataset_statuses: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            /** Browser Reports */
+            browser_reports: number;
+            /**
+             * Browser Reports Without Checks
+             * @description Managed browser reports without recorded comparison checks.
+             */
+            browser_reports_without_checks: number;
+            /**
+             * Browser Unavailable Or Inconclusive Fields
+             * @description Count of managed browser reports with an unavailable, timed out, or inconclusive check by field.
+             */
+            browser_unavailable_or_inconclusive_fields: {
+                [key: string]: number;
+            };
+        };
+        /** ChallengeGroup[int] */
+        ChallengeGroup_int_: {
+            /** Finished Sessions */
+            finished_sessions: number;
+            /**
+             * Evaluated Sessions
+             * @description Sessions with a detected challenge or a completed workflow that observed an authorized document.
+             */
+            evaluated_sessions: number;
+            /** Unevaluated Sessions */
+            unevaluated_sessions: number;
+            /**
+             * Unevaluated Reasons
+             * @description One reason per unevaluated session. Counts sum to unevaluated_sessions.
+             */
+            unevaluated_reasons: {
+                [key: string]: number;
+            };
+            /** Challenged Sessions */
+            challenged_sessions: number;
+            /**
+             * Challenge Rate
+             * @description Detected challenges divided by evaluated sessions, or null when none were evaluated.
+             */
+            challenge_rate: number | null;
+            /** Transport Attempts */
+            transport_attempts: number;
+            /** Transport Errors */
+            transport_errors: number;
+            /** Transport Error Rate */
+            transport_error_rate: number | null;
+            /** Mean Transport Latency Ms */
+            mean_transport_latency_ms: number | null;
+            /** Transport Latency Samples */
+            transport_latency_samples: number;
+            /**
+             * Value
+             * @description A proxy inventory ID or an ASN or country from confirmed sticky preflight evidence. Null denotes unavailable evidence.
+             */
+            value: number | null;
+        };
+        /** ChallengeGroup[str] */
+        ChallengeGroup_str_: {
+            /** Finished Sessions */
+            finished_sessions: number;
+            /**
+             * Evaluated Sessions
+             * @description Sessions with a detected challenge or a completed workflow that observed an authorized document.
+             */
+            evaluated_sessions: number;
+            /** Unevaluated Sessions */
+            unevaluated_sessions: number;
+            /**
+             * Unevaluated Reasons
+             * @description One reason per unevaluated session. Counts sum to unevaluated_sessions.
+             */
+            unevaluated_reasons: {
+                [key: string]: number;
+            };
+            /** Challenged Sessions */
+            challenged_sessions: number;
+            /**
+             * Challenge Rate
+             * @description Detected challenges divided by evaluated sessions, or null when none were evaluated.
+             */
+            challenge_rate: number | null;
+            /** Transport Attempts */
+            transport_attempts: number;
+            /** Transport Errors */
+            transport_errors: number;
+            /** Transport Error Rate */
+            transport_error_rate: number | null;
+            /** Mean Transport Latency Ms */
+            mean_transport_latency_ms: number | null;
+            /** Transport Latency Samples */
+            transport_latency_samples: number;
+            /**
+             * Value
+             * @description A proxy inventory ID or an ASN or country from confirmed sticky preflight evidence. Null denotes unavailable evidence.
+             */
+            value: string | null;
+        };
+        /** ChallengeMetrics */
+        ChallengeMetrics: {
+            /** Finished Sessions */
+            finished_sessions: number;
+            /**
+             * Evaluated Sessions
+             * @description Sessions with a detected challenge or a completed workflow that observed an authorized document.
+             */
+            evaluated_sessions: number;
+            /** Unevaluated Sessions */
+            unevaluated_sessions: number;
+            /**
+             * Unevaluated Reasons
+             * @description One reason per unevaluated session. Counts sum to unevaluated_sessions.
+             */
+            unevaluated_reasons: {
+                [key: string]: number;
+            };
+            /** Challenged Sessions */
+            challenged_sessions: number;
+            /**
+             * Challenge Rate
+             * @description Detected challenges divided by evaluated sessions, or null when none were evaluated.
+             */
+            challenge_rate: number | null;
+            /** Transport Attempts */
+            transport_attempts: number;
+            /** Transport Errors */
+            transport_errors: number;
+            /** Transport Error Rate */
+            transport_error_rate: number | null;
+            /** Mean Transport Latency Ms */
+            mean_transport_latency_ms: number | null;
+            /** Transport Latency Samples */
+            transport_latency_samples: number;
+        };
         /** CommandInput */
         CommandInput: {
             /**
@@ -1443,42 +1879,6 @@ export interface components {
             url?: string | null;
             /** Delta Y */
             delta_y?: number | null;
-        };
-        /** ExperimentInput */
-        ExperimentInput: {
-            /** Name */
-            name: string;
-            /**
-             * Concurrency
-             * @default 1
-             */
-            concurrency: number;
-            /**
-             * Description
-             * @default
-             */
-            description: string;
-            /**
-             * Hypothesis
-             * @default
-             */
-            hypothesis: string;
-            /**
-             * Provider
-             * @default adscore
-             * @constant
-             */
-            provider: "adscore";
-            /**
-             * Baseline Adapter
-             * @default playwright
-             * @enum {string}
-             */
-            baseline_adapter: "playwright" | "cloakbrowser" | "kameleo" | "manual_chrome";
-            /** Tags */
-            tags?: string[];
-            /** Groups */
-            groups: components["schemas"]["BatchInput"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1502,6 +1902,14 @@ export interface components {
         InventoryView: {
             /** Name */
             name: string;
+            /**
+             * Provider
+             * @default oxylabs
+             * @enum {string}
+             */
+            provider: "oxylabs" | "decodo";
+            /** Target Origin */
+            target_origin?: string | null;
             /**
              * Product
              * @enum {string}
@@ -1680,8 +2088,18 @@ export interface components {
         PolicyView: {
             /** Name */
             name: string;
+            /**
+             * Provider
+             * @default oxylabs
+             * @enum {string}
+             */
+            provider: "oxylabs" | "decodo";
+            /** Target Origin */
+            target_origin?: string | null;
             /** Country */
             country?: string | null;
+            /** Allowed Asns */
+            allowed_asns?: number[];
             /** Fallback Countries */
             fallback_countries?: string[];
             /** Products */
@@ -1723,6 +2141,11 @@ export interface components {
              * @default false
              */
             provider_resolved_ack: boolean;
+            /**
+             * Initial Navigation Timeout Ms
+             * @description Override the initial DOMContentLoaded deadline for sessions using this proxy policy.
+             */
+            initial_navigation_timeout_ms?: number | null;
             /** Max Latency Ms */
             max_latency_ms?: number | null;
             /** Min Transport Success Rate */
@@ -1738,6 +2161,15 @@ export interface components {
             version: number;
             /** Created At */
             created_at: string;
+        };
+        /** PreflightLatency */
+        PreflightLatency: {
+            /** Samples */
+            samples: number;
+            /** P50 */
+            p50: number;
+            /** P95 */
+            p95: number;
         };
         /** Preparation */
         Preparation: {
@@ -1769,6 +2201,13 @@ export interface components {
              * @default 3600
              */
             lifetime_seconds: number;
+        };
+        /** PresetViewport */
+        PresetViewport: {
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
         };
         /** ProfileInput */
         ProfileInput: {
@@ -1820,10 +2259,32 @@ export interface components {
              */
             concurrency: number;
         };
+        /** ProxyCheckDuplicateGroup */
+        ProxyCheckDuplicateGroup: {
+            /** Proxy Check Ip */
+            proxy_check_ip: string | null;
+            /** Sessions */
+            sessions: components["schemas"]["ProxyCheckSession"][];
+        };
+        /** ProxyCheckSession */
+        ProxyCheckSession: {
+            /** Id */
+            id: string;
+            /** Ordinal */
+            ordinal: number;
+        };
         /** ProxyInventoryInput */
         ProxyInventoryInput: {
             /** Name */
             name: string;
+            /**
+             * Provider
+             * @default oxylabs
+             * @enum {string}
+             */
+            provider: "oxylabs" | "decodo";
+            /** Target Origin */
+            target_origin?: string | null;
             /**
              * Product
              * @enum {string}
@@ -1874,8 +2335,18 @@ export interface components {
         ProxyPolicyInput: {
             /** Name */
             name: string;
+            /**
+             * Provider
+             * @default oxylabs
+             * @enum {string}
+             */
+            provider: "oxylabs" | "decodo";
+            /** Target Origin */
+            target_origin?: string | null;
             /** Country */
             country?: string | null;
+            /** Allowed Asns */
+            allowed_asns?: number[];
             /** Fallback Countries */
             fallback_countries?: string[];
             /** Products */
@@ -1917,6 +2388,11 @@ export interface components {
              * @default false
              */
             provider_resolved_ack: boolean;
+            /**
+             * Initial Navigation Timeout Ms
+             * @description Override the initial DOMContentLoaded deadline for sessions using this proxy policy.
+             */
+            initial_navigation_timeout_ms?: number | null;
             /** Max Latency Ms */
             max_latency_ms?: number | null;
             /** Min Transport Success Rate */
@@ -1926,6 +2402,38 @@ export interface components {
              * @default 1
              */
             connection_load: number;
+        };
+        /** ProxyPreflightSummary */
+        ProxyPreflightSummary: {
+            /** Attempts */
+            attempts: number;
+            /** Limit */
+            limit: number;
+            /** Blocking Reasons */
+            blocking_reasons: {
+                [key: string]: number;
+            };
+            /** Missing Evidence Rates */
+            missing_evidence_rates: {
+                [key: string]: number | null;
+            };
+            /** Sticky Compared */
+            sticky_compared: number;
+            /** Sticky Mismatches */
+            sticky_mismatches: number;
+            /** Latency Ms */
+            latency_ms: {
+                [key: string]: components["schemas"]["PreflightLatency"];
+            };
+        };
+        /** RecordingSegmentView */
+        RecordingSegmentView: {
+            /** Sequence */
+            sequence: number;
+            /** Start Ms */
+            start_ms: number;
+            /** Duration Ms */
+            duration_ms: number;
         };
         /** ReportView */
         ReportView: {
@@ -2018,11 +2526,8 @@ export interface components {
             workflow_id: string;
             /** Repetitions */
             repetitions?: number | null;
-            /**
-             * Seed
-             * @default 42
-             */
-            seed: number;
+            /** Seed */
+            seed?: number | null;
             /**
              * Phase
              * @default pilot
@@ -2031,7 +2536,7 @@ export interface components {
             phase: "pilot" | "confirmation";
             /**
              * Mode
-             * @default demo
+             * @default live
              * @enum {string}
              */
             mode: "live" | "demo";
@@ -2112,6 +2617,11 @@ export interface components {
             end_at?: string | null;
             batch: components["schemas"]["BatchInput"];
             /**
+             * Refresh Dependencies
+             * @default false
+             */
+            refresh_dependencies: boolean;
+            /**
              * Overlap
              * @default skip
              * @enum {string}
@@ -2153,6 +2663,11 @@ export interface components {
             end_at?: string | null;
             batch: components["schemas"]["BatchInput"];
             /**
+             * Refresh Dependencies
+             * @default false
+             */
+            refresh_dependencies: boolean;
+            /**
              * Overlap
              * @default skip
              * @enum {string}
@@ -2177,8 +2692,64 @@ export interface components {
             enabled: boolean;
             /** Next Fire At */
             next_fire_at: string | null;
+            /** Pause Reason */
+            pause_reason?: string | null;
+            dependencies?: components["schemas"]["BatchDependencyVersions"] | null;
             /** Created At */
             created_at: string;
+        };
+        /** SessionAttemptRecordingView */
+        SessionAttemptRecordingView: {
+            /** Attempt Number */
+            attempt_number: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "recording" | "ready" | "partial" | "unavailable" | "expired";
+            /** Segments */
+            segments: components["schemas"]["RecordingSegmentView"][];
+        };
+        /** SessionGroupInput */
+        SessionGroupInput: {
+            /**
+             * Adapter
+             * @enum {string}
+             */
+            adapter: "playwright" | "cloakbrowser" | "kameleo" | "manual_chrome";
+            /**
+             * Count
+             * @default 1
+             */
+            count: number;
+            /** Profile Ids */
+            profile_ids?: (string | null)[];
+            /** Persistence */
+            persistence?: ("fresh" | "persistent") | null;
+            /** Proxy Policy Id */
+            proxy_policy_id?: string | null;
+            /**
+             * Use Direct
+             * @default false
+             */
+            use_direct: boolean;
+            /** Device Preset */
+            device_preset?: ("phone_small" | "phone" | "phone_large" | "tablet" | "tablet_landscape") | null;
+            /** User Agent */
+            user_agent?: string | null;
+            /** Workflow Inputs */
+            workflow_inputs?: {
+                [key: string]: string | number | boolean;
+            };
+            /** Fixture Params */
+            fixture_params?: {
+                [key: string]: string;
+            } | null;
+        };
+        /** SessionRecordingManifest */
+        SessionRecordingManifest: {
+            /** Attempts */
+            attempts: components["schemas"]["SessionAttemptRecordingView"][];
         };
         /** SessionTemplateInput */
         SessionTemplateInput: {
@@ -2205,6 +2776,8 @@ export interface components {
             workflow_version: number;
             /** Proxy Policy Version */
             proxy_policy_version: number | null;
+            /** Fixture Parameter Names */
+            fixture_parameter_names: string[];
         };
         /** SessionView */
         SessionView: {
@@ -2216,12 +2789,21 @@ export interface components {
             profile_id: string;
             /** Batch Id */
             batch_id: string;
+            /** Workflow Name */
+            workflow_name?: string | null;
+            /** Workflow Version */
+            workflow_version?: number | null;
+            batch_preset?: components["schemas"]["BatchPresetView"] | null;
             /** Adapter */
             adapter: string;
             /** Persistence */
             persistence: string;
             /** Status */
             status: string;
+            /** Queue Reason */
+            queue_reason?: string | null;
+            /** Next Attempt At */
+            next_attempt_at?: string | null;
             /** Mode */
             mode: string;
             /** Pool */
@@ -2258,16 +2840,35 @@ export interface components {
             metadata: {
                 [key: string]: unknown;
             };
+            /** Observed Ip */
+            observed_ip?: string | null;
+            /** Proxy Check Ip */
+            proxy_check_ip?: string | null;
+            /**
+             * Recording Status
+             * @default unavailable
+             * @enum {string}
+             */
+            recording_status: "recording" | "ready" | "partial" | "unavailable" | "expired";
+            /**
+             * Recording Available
+             * @default false
+             */
+            recording_available: boolean;
         };
         /** Step */
-        Step: {
+        "Step-Input": {
             /**
              * Action
              * @enum {string}
              */
-            action: "navigate" | "click" | "fill" | "select" | "extract" | "wait_for" | "assert_visible" | "assert_text" | "assert_not_visible" | "checkpoint";
+            action: "navigate" | "click" | "fill" | "select" | "extract" | "wait_for" | "assert_visible" | "assert_text" | "assert_not_visible" | "checkpoint" | "check" | "uncheck" | "press" | "hover" | "wait_for_text" | "wait_for_hidden" | "wait_for_url" | "assert_url" | "if" | "repeat" | "use_block" | "open_tab" | "switch_tab" | "close_tab" | "expect_popup";
             /** Url */
             url?: string | null;
+            /** Fixture Params */
+            fixture_params?: {
+                [key: string]: string;
+            } | null;
             /** Selector */
             selector?: string | null;
             /** Value */
@@ -2278,9 +2879,84 @@ export interface components {
             name?: string | null;
             /**
              * Timeout Ms
-             * @default 5000
+             * @description Override the initial navigation timeout for Navigate or Open tab. Other steps default to 5000 ms.
              */
-            timeout_ms: number;
+            timeout_ms?: number | null;
+            /**
+             * Post Navigation Wait Ms
+             * @description Milliseconds to wait after navigation before completing the step.
+             */
+            post_navigation_wait_ms?: number | null;
+            /** Save As */
+            save_as?: string | null;
+            /** Value Ref */
+            value_ref?: string | null;
+            condition?: components["schemas"]["WorkflowCondition"] | null;
+            /** Steps */
+            steps?: components["schemas"]["Step-Input"][] | null;
+            /** Else Steps */
+            else_steps?: components["schemas"]["Step-Input"][] | null;
+            /** Max Iterations */
+            max_iterations?: number | null;
+            /** Block Id */
+            block_id?: string | null;
+            /** Block Version */
+            block_version?: number | null;
+            /** Tab */
+            tab?: string | null;
+            /** Frame */
+            frame?: string[] | null;
+        };
+        /** Step */
+        "Step-Output": {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "navigate" | "click" | "fill" | "select" | "extract" | "wait_for" | "assert_visible" | "assert_text" | "assert_not_visible" | "checkpoint" | "check" | "uncheck" | "press" | "hover" | "wait_for_text" | "wait_for_hidden" | "wait_for_url" | "assert_url" | "if" | "repeat" | "use_block" | "open_tab" | "switch_tab" | "close_tab" | "expect_popup";
+            /** Url */
+            url?: string | null;
+            /** Fixture Params */
+            fixture_params?: {
+                [key: string]: string;
+            } | null;
+            /** Selector */
+            selector?: string | null;
+            /** Value */
+            value?: string | null;
+            /** Secret Ref */
+            secret_ref?: string | null;
+            /** Name */
+            name?: string | null;
+            /**
+             * Timeout Ms
+             * @description Override the initial navigation timeout for Navigate or Open tab. Other steps default to 5000 ms.
+             */
+            timeout_ms?: number | null;
+            /**
+             * Post Navigation Wait Ms
+             * @description Milliseconds to wait after navigation before completing the step.
+             */
+            post_navigation_wait_ms?: number | null;
+            /** Save As */
+            save_as?: string | null;
+            /** Value Ref */
+            value_ref?: string | null;
+            condition?: components["schemas"]["WorkflowCondition"] | null;
+            /** Steps */
+            steps?: components["schemas"]["Step-Output"][] | null;
+            /** Else Steps */
+            else_steps?: components["schemas"]["Step-Output"][] | null;
+            /** Max Iterations */
+            max_iterations?: number | null;
+            /** Block Id */
+            block_id?: string | null;
+            /** Block Version */
+            block_version?: number | null;
+            /** Tab */
+            tab?: string | null;
+            /** Frame */
+            frame?: string[] | null;
         };
         /** TargetInput */
         TargetInput: {
@@ -2326,6 +3002,7 @@ export interface components {
             session_policy: "fresh" | "repeat_within_trial";
             /**
              * Authorized
+             * @default true
              * @constant
              */
             authorized: true;
@@ -2374,6 +3051,7 @@ export interface components {
             session_policy: "fresh" | "repeat_within_trial";
             /**
              * Authorized
+             * @default true
              * @constant
              */
             authorized: true;
@@ -2381,12 +3059,14 @@ export interface components {
             id: string;
             /** Version */
             version: number;
-            /** Verified */
+            /**
+             * Verified
+             * @deprecated
+             * @description Historical ownership verification status
+             */
             verified: boolean;
-            /** Proof Path */
-            proof_path?: string | null;
-            /** Proof Token */
-            proof_token?: string | null;
+            /** Live Ready */
+            live_ready: boolean;
         };
         /** TrialView */
         TrialView: {
@@ -2429,19 +3109,100 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** WorkflowBlockInput */
+        WorkflowBlockInput: {
+            /** Name */
+            name: string;
+            /** Steps */
+            steps: components["schemas"]["Step-Input"][];
+        };
+        /** WorkflowBlockView */
+        WorkflowBlockView: {
+            /** Name */
+            name: string;
+            /** Steps */
+            steps: components["schemas"]["Step-Output"][];
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+        };
+        /** WorkflowCondition */
+        WorkflowCondition: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "visible" | "hidden" | "text_contains" | "url_contains" | "value_equals";
+            /** Selector */
+            selector?: string | null;
+            /** Text */
+            text?: string | null;
+            /** Value Ref */
+            value_ref?: string | null;
+            /** Value */
+            value?: string | number | boolean | null;
+        };
         /** WorkflowInput */
         WorkflowInput: {
             /** Name */
             name: string;
             /** Steps */
-            steps: components["schemas"]["Step"][];
+            steps: components["schemas"]["Step-Input"][];
+            /**
+             * Initial Navigation Timeout Ms
+             * @description Default initial timeout for navigation steps in this workflow. Explicit step values take precedence.
+             */
+            initial_navigation_timeout_ms?: number | null;
+            /**
+             * Schema Version
+             * @default 1
+             * @enum {integer}
+             */
+            schema_version: 1 | 2;
+            /** Inputs */
+            inputs?: {
+                [key: string]: components["schemas"]["WorkflowInputDefinition"];
+            };
+            success_check?: components["schemas"]["WorkflowCondition"] | null;
+        };
+        /** WorkflowInputDefinition */
+        WorkflowInputDefinition: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "string" | "number" | "boolean";
+            /** Default */
+            default?: string | number | boolean | null;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
         };
         /** WorkflowView */
         WorkflowView: {
             /** Name */
             name: string;
             /** Steps */
-            steps: components["schemas"]["Step"][];
+            steps: components["schemas"]["Step-Output"][];
+            /**
+             * Initial Navigation Timeout Ms
+             * @description Default initial timeout for navigation steps in this workflow. Explicit step values take precedence.
+             */
+            initial_navigation_timeout_ms?: number | null;
+            /**
+             * Schema Version
+             * @default 1
+             * @enum {integer}
+             */
+            schema_version: 1 | 2;
+            /** Inputs */
+            inputs?: {
+                [key: string]: components["schemas"]["WorkflowInputDefinition"];
+            };
+            success_check?: components["schemas"]["WorkflowCondition"] | null;
             /** Id */
             id: string;
             /** Version */
@@ -2476,6 +3237,125 @@ export interface operations {
             };
         };
     };
+    workflow_blocks_api_v1_workflow_blocks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBlockView"][];
+                };
+            };
+        };
+    };
+    create_workflow_block_api_v1_workflow_blocks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowBlockInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBlockView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflow_block_versions_api_v1_workflow_blocks__block_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                block_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBlockView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_workflow_block_api_v1_workflow_blocks__block_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                block_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowBlockInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowBlockView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     status_api_v1_status_get: {
         parameters: {
             query?: never;
@@ -2503,6 +3383,7 @@ export interface operations {
                 offset?: number;
                 q?: string | null;
                 mode?: string | null;
+                /** @deprecated */
                 verified?: boolean | null;
                 order?: string;
             };
@@ -2618,37 +3499,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    verify_target_api_v1_targets__target_id__verify_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                target_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TargetView"];
                 };
             };
             /** @description Validation Error */
@@ -2791,26 +3641,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    starter_api_v1_starter_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
@@ -3118,26 +3948,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    diagnostics_api_v1_diagnostics_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
@@ -3512,6 +4322,40 @@ export interface operations {
             };
         };
     };
+    export_session_diagnostic_bundle_api_v1_sessions__session_id__diagnostic_bundle_get: {
+        parameters: {
+            query?: {
+                baseline_id?: string | null;
+                auto_baseline?: boolean;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     session_events_api_v1_sessions__session_id__events_get: {
         parameters: {
             query?: {
@@ -3657,7 +4501,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BatchInput"];
+                "application/json": components["schemas"]["BatchLaunchInput"];
             };
         };
         responses: {
@@ -3668,6 +4512,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BatchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_preflight_api_v1_batches_preflight_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchLaunchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchPreflightView"];
                 };
             };
             /** @description Validation Error */
@@ -3702,6 +4579,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_BatchItemView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_ip_summary_api_v1_batches__batch_id__ip_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchIPSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_challenge_summary_api_v1_batches__batch_id__challenge_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchChallengeSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_proxy_check_ip_summary_api_v1_batches__batch_id__proxy_check_ip_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchProxyCheckIPSummary"];
                 };
             };
             /** @description Validation Error */
@@ -3767,6 +4737,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_proxy_preflight_summary_api_v1_proxy_preflight_summary_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyPreflightSummary"];
                 };
             };
             /** @description Validation Error */
@@ -4209,69 +5210,6 @@ export interface operations {
             };
         };
     };
-    comparisons_api_v1_research_comparisons_get: {
-        parameters: {
-            query: {
-                batch_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    research_export_api_v1_research_export_get: {
-        parameters: {
-            query: {
-                batch_id: string;
-                format?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     update_inventory_api_v1_proxy_inventory__inventory_id__put: {
         parameters: {
             query?: never;
@@ -4443,300 +5381,6 @@ export interface operations {
             };
         };
     };
-    experiments_api_v1_experiments_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-                q?: string | null;
-                status?: ("draft" | "ready" | "blocked") | null;
-                mode?: ("live" | "demo") | null;
-                order?: "newest" | "oldest" | "name_asc" | "name_desc";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_experiment_api_v1_experiments_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExperimentInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    edit_experiment_api_v1_experiments__experiment_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                experiment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExperimentInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    validate_experiment_api_v1_experiments__experiment_id__validate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                experiment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clone_experiment_api_v1_experiments__experiment_id__clone_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                experiment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    experiment_runs_api_v1_experiments__experiment_id__runs_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                experiment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    run_experiment_api_v1_experiments__experiment_id__runs_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                experiment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    run_comparison_api_v1_experiments__experiment_id__runs__run_id__comparison_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                experiment_id: string;
-                run_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    run_export_api_v1_experiments__experiment_id__runs__run_id__export_get: {
-        parameters: {
-            query?: {
-                format?: string;
-            };
-            header?: never;
-            path: {
-                experiment_id: string;
-                run_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_artifacts_api_v1_sessions__session_id__artifacts_get: {
         parameters: {
             query?: never;
@@ -4786,6 +5430,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_recordings_api_v1_sessions__session_id__recordings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionRecordingManifest"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recording_segment_api_v1_sessions__session_id__recordings__attempt_number__segments__sequence__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                attempt_number: number;
+                sequence: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "video/mp4": string;
                 };
             };
             /** @description Validation Error */
@@ -5028,58 +5736,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    research_page_lab_research_get: {
-        parameters: {
-            query: {
-                context: string;
-                next?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    research_callback_lab_research_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };

@@ -18,8 +18,9 @@ log = logging.getLogger("abrl.scheduler")
 def tick():
     with Session.begin() as db:
         materialize_due(db)
+    with Session.begin() as db:
         reap_lost(db)
-        admission_tick(db)
+        admission_tick(db, require_worker_heartbeat=True)
 
 
 async def serve():

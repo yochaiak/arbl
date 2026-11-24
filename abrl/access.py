@@ -1,5 +1,4 @@
 import hmac
-import os
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
@@ -10,7 +9,6 @@ from abrl.db import Session
 from abrl.platform_models import Membership, Project, User
 
 ROLES = {"viewer": 1, "analyst": 2, "operator": 3, "owner": 4}
-CLOUD = os.getenv("ABRL_DEPLOYMENT", "local") == "cloud"
 
 
 @dataclass
@@ -27,7 +25,7 @@ def ensure_bootstrap(db) -> User:
         db.add(user)
         db.flush()
     if db.get(Project, "default") is None:
-        db.add(Project(id="default", name="Default research project", concurrency=20))
+        db.add(Project(id="default", name="Default project", concurrency=20))
         db.flush()
     if db.get(Membership, ("default", user.id)) is None:
         db.add(Membership(project_id="default", user_id=user.id, role="owner"))
@@ -39,8 +37,7 @@ def principal(request: Request) -> str:
     header = request.headers.get("authorization", "")
     prefix, _, token = header.partition(" ")
     if (
-        not CLOUD
-        and prefix.lower() == "bearer"
+        prefix.lower() == "bearer"
         and OPERATOR_TOKEN
         and hmac.compare_digest(token.encode(), OPERATOR_TOKEN.encode())
     ):

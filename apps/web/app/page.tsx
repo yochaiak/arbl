@@ -1,5 +1,5 @@
-import { Lab } from "@/components/lab";
+import { BrowserWorkspace } from "@/components/lab";
 
 export default function Home() {
-  return <Lab />;
+  return <BrowserWorkspace />;
 }

@@ -1,15 +1,13 @@
 FROM python:3.12.12-slim-bookworm AS base
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_PROJECT_ENVIRONMENT=/opt/venv PATH=/opt/venv/bin:$PATH
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 ffmpeg && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv==0.11.26
 COPY pyproject.toml uv.lock /app/
 RUN uv sync --frozen --no-dev --no-install-project
 COPY abrl /app/abrl
 COPY migrations /app/migrations
 COPY alembic.ini /app/alembic.ini
-COPY scripts/cloud-backup.py /app/scripts/cloud-backup.py
-COPY scripts/cloud-migrate.py /app/scripts/cloud-migrate.py
 RUN useradd --uid 10001 --create-home abrl && mkdir -p /app/.abrl && chown -R abrl:abrl /app/.abrl
 USER 10001
 EXPOSE 8400
@@ -21,7 +19,7 @@ RUN playwright install --with-deps chromium && chmod -R a+rX /opt/browsers
 USER 10001
 CMD ["python", "-m", "abrl.session_runner", "--once", "--pool", "standard"]
 
-# Cloud manual Chrome is amd64 and headed. No automated user activity is added.
+# The containerized manual Chrome adapter requires amd64 and a display.
 FROM browser AS manual
 USER root
 ARG GOOGLE_CHROME_VERSION=""

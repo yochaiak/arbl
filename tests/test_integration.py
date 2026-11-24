@@ -5,6 +5,7 @@ import io
 import json
 import time
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -34,7 +35,7 @@ def _eventually(read, condition, *, timeout=30, description):
 
 @pytest.fixture(scope="module")
 def api():
-    assert OPERATOR_TOKEN, "Set the operator token and start make dev before running integration tests."
+    assert OPERATOR_TOKEN, "Set the operator token and start make dev-fixtures before running integration tests."
     with httpx.Client(
         base_url=f"{BASE_URL}/api/v1",
         headers={"Authorization": f"Bearer {OPERATOR_TOKEN}"},
@@ -44,7 +45,7 @@ def api():
         try:
             _response(client.get(f"{BASE_URL}/health"))
         except httpx.ConnectError:
-            pytest.fail(f"Start the integration API on {BASE_URL} with make dev.")
+            pytest.fail(f"Start the integration API on {BASE_URL} with make dev-fixtures.")
         _eventually(
             lambda: _response(client.get("/status")).json()["worker"],
             lambda worker: worker["ready"],
@@ -55,7 +56,7 @@ def api():
 
 @pytest.fixture(scope="module")
 def starter(api):
-    seed = _response(api.post("/starter")).json()
+    seed = _response(api.post(f"{BASE_URL}/test/seed")).json()
     workflows = {
         workflow["name"]: workflow
         for workflow in _response(api.get("/workflows")).json()
@@ -123,6 +124,50 @@ def test_live_browser_workflows(api, live_reports, workflow):
     assert trial["environment"]["browser_version"]
 
 
+@pytest.mark.parametrize("mode", ["round_robin", "seeded"])
+def test_live_batch_uses_pinned_responsive_presets(api, starter, mode):
+    target_id, workflows = starter
+    batch = _response(api.post("/batches", json={
+        "target_id": target_id,
+        "workflow_id": workflows["Landing check"]["id"],
+        "idempotency_key": uuid4().hex,
+        "count": 4,
+        "artifact_policy": "none",
+        "capture_javascript": False,
+        "seed": 96,
+        "batch_presets": {
+            "mode": mode, "presets": ["desktop_1440", "compact_390"],
+            "locales": ["en-US", "en-GB"],
+        },
+    }), expected=201).json()
+    batch_path = f"/batches/{batch['id']}"
+    items = _response(api.get(f"{batch_path}/items")).json()["items"]
+    paths = [f"/sessions/{item['session_id']}" for item in sorted(items, key=lambda item: item["ordinal"])]
+    sessions = _eventually(
+        lambda: [_response(api.get(path)).json() for path in paths],
+        lambda rows: len(rows) == 4 and all(row["finished_at"] for row in rows),
+        description="the preset batch to finish",
+    )
+    assert [row["status"] for row in sessions] == ["completed"] * 4
+    assert len({row["profile_id"] for row in sessions}) == 4
+    pairs = [(row["batch_preset"]["id"], row["batch_preset"]["locale"]) for row in sessions]
+    expected = [
+        ("desktop_1440", "en-US"), ("desktop_1440", "en-GB"),
+        ("compact_390", "en-US"), ("compact_390", "en-GB"),
+    ]
+    if mode == "round_robin":
+        assert pairs == expected
+    else:
+        assert sorted(pairs) == sorted(expected)
+    for session, path in zip(sessions, paths, strict=True):
+        preset = session["batch_preset"]
+        assert preset["seed"] == 96 and preset["mode"] == mode
+        assert session["metadata"]["device_mode"] == "responsive_viewport"
+        assert session["metadata"]["viewport"] == preset["viewport"]
+        exported = _response(api.get(f"{path}/diagnostic-bundle")).json()
+        assert exported["session"]["batch_preset"] == preset
+
+
 def test_exports_and_event_stream(api, live_reports):
     report = live_reports["Sample form"]
     run_id = report["run_id"]
@@ -159,7 +204,7 @@ def test_exports_and_event_stream(api, live_reports):
     assert events == ["run_queued", "run_started", "trial_started", "trial_completed", "run_completed"]
 
 
-def test_demo_repeatability_and_version_history(api):
+def test_live_launch_and_version_history(api):
     target_data = {"name": "Integration target", "origin": API_ORIGIN, "authorized": True}
     target = _response(api.post("/targets", json=target_data), expected=201).json()
     workflow_data = {
@@ -170,20 +215,14 @@ def test_demo_repeatability_and_version_history(api):
         ],
     }
     workflow = _response(api.post("/workflows", json=workflow_data), expected=201).json()
-    first_run = _create_run(api, target["id"], workflow["id"], mode="demo", repetitions=3, seed=301)
-    second_run = _create_run(api, target["id"], workflow["id"], mode="demo", repetitions=3, seed=301)
+    rejected = api.post(
+        "/runs", json={"target_id": target["id"], "workflow_id": workflow["id"], "mode": "demo"}
+    )
+    assert rejected.status_code == 422
+    first_run = _create_run(api, target["id"], workflow["id"])
     before = _wait_terminal(api, first_run)
-    duplicate = _wait_terminal(api, second_run)
-
-    def comparable(report):
-        return [(trial["ordinal"], trial["outcome"], trial["elapsed_ms"]) for trial in report["trials"]]
-
-    assert comparable(before) == comparable(duplicate)
-    assert before["config_sha256"] == duplicate["config_sha256"]
-    assert before["mode"] == "demo"
-    assert before["recommendation"]["status"] == "simulated"
-    assert before["verdicts"] == {}
-    assert all(trial["environment"]["source"] == "simulated" for trial in before["trials"])
+    assert before["mode"] == "live"
+    assert before["completion"]["successes"] == 1
 
     for resource, original, payload in (
         ("targets", target, target_data),
@@ -201,34 +240,40 @@ def test_demo_repeatability_and_version_history(api):
     assert after["target_version"] == after["workflow_version"] == 1
 
 
-def test_rejects_unauthenticated_requests_and_unverified_remote_run(api, starter):
+def test_requires_authentication_and_keeps_registered_navigation_scope(api):
     unauthorized = httpx.get(f"{BASE_URL}/api/v1/targets", timeout=5, trust_env=False)
     assert unauthorized.status_code == 401
 
-    # A reserved domain and an unverified registration keep this check entirely local.
+    # The run is rejected before it can contact a destination outside the registration.
     remote = _response(
         api.post(
             "/targets",
             json={
-                "name": "Unverified integration target",
-                "origin": "https://unverified.test",
-                "authorized": True,
+                "name": "Integration target with exact scope",
+                "origin": "https://registered.test",
             },
         ),
         expected=201,
     ).json()
-    assert remote["verified"] is False
+    assert remote["authorized"] and remote["live_ready"]
+    workflow = _response(
+        api.post("/workflows", json={
+            "name": "Integration out-of-scope workflow",
+            "steps": [{"action": "navigate", "url": "https://sub.registered.test/"}],
+        }),
+        expected=201,
+    ).json()
     blocked = api.post(
         "/runs",
         json={
             "target_id": remote["id"],
-            "workflow_id": starter[1]["Sample form"]["id"],
+            "workflow_id": workflow["id"],
             "mode": "live",
             "repetitions": 1,
         },
     )
     assert blocked.status_code == 409
-    assert "verify" in blocked.json()["detail"].lower()
+    assert "registered target scope" in blocked.json()["detail"]
 
 
 def test_cancel_stops_in_progress_workflow(api, starter):

@@ -1,4 +1,4 @@
-name: Workflow lab checks
+name: Browser workspace checks
 on:
   push:
   pull_request:
@@ -25,7 +25,7 @@ jobs:
       - run: make infra migrate
       - name: Exercise the local browser and data pipeline
         run: |
-          make api > "${RUNNER_TEMP}/abrl-api.log" 2>&1 &
+          uv run uvicorn --app-dir tests --factory browser_fixture:create_app --host 127.0.0.1 --port 8400 --no-proxy-headers --no-access-log > "${RUNNER_TEMP}/abrl-api.log" 2>&1 &
           make worker > "${RUNNER_TEMP}/abrl-worker.log" 2>&1 &
           make scheduler > "${RUNNER_TEMP}/abrl-scheduler.log" 2>&1 &
           make sessions > "${RUNNER_TEMP}/abrl-sessions.log" 2>&1 &

@@ -1,4 +1,4 @@
-"""Supported browser lifecycles. No custom fingerprint mutations are applied."""
+"""Supported browser lifecycles and browser context options."""
 
 from __future__ import annotations
 
@@ -13,16 +13,28 @@ import signal
 import socket
 import tempfile
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
-from playwright.async_api import BrowserContext, async_playwright
+from playwright.async_api import BrowserContext, CDPSession, async_playwright
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import TimeoutError as PlaywrightTimeout
 
-from .profile_storage import ProfileLock
+from .batch_presets import preset_details
+from .browser_settings import (
+    DevicePreset,
+    adapter_contract,
+    device_viewport,
+    session_capabilities,
+    supports_user_agent_override,
+)
+from .platform_schemas import validate_user_agent
+from .profile_storage import ProfileLock, ProfileStorageError
 
 NETWORK_ARGS = [
     "--disable-quic",
@@ -30,6 +42,29 @@ NETWORK_ARGS = [
     "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
     "--proxy-bypass-list=<-loopback>",
 ]
+_LAUNCH_TIMEOUT_MS = 30_000
+
+
+async def quic_launch_check(session: CDPSession) -> str:
+    """Return only the QUIC switch verdict from the running owned fixture browser."""
+    try:
+        async with asyncio.timeout(1):
+            response = await session.send("Browser.getBrowserCommandLine")
+    except (PlaywrightError, TimeoutError):
+        # Some vendor runtimes restrict this command. A requested flag alone is insufficient evidence.
+        return "unavailable"
+    arguments = response.get("arguments")
+    if not isinstance(arguments, list) or not arguments or not all(isinstance(arg, str) for arg in arguments):
+        return "unavailable"
+    switches = set()
+    for arg in arguments:
+        if arg == "--":
+            break
+        if arg.startswith("--"):
+            switches.add(arg.partition("=")[0])
+    if "--disable-quic" not in switches or switches & {"--enable-quic", "--origin-to-force-quic-on"}:
+        return "mismatch"
+    return "passed"
 
 
 class AdapterUnavailable(ValueError):
@@ -79,13 +114,18 @@ def _chromium_cached() -> bool:
 
 
 def _entry(identifier, name, status, reason, *, capabilities=None, **extra):
+    contract = adapter_contract(identifier)
     return {
         "id": identifier,
         "name": name,
         "available": status in {"ready", "configured"},
         "status": status,
         "reason": reason,
-        "capabilities": capabilities or ["fresh", "persistent", "manual", "automated_preparation"],
+        "capabilities": [
+            *(capabilities or ["fresh", "persistent", "manual", "automated_preparation"]),
+            *session_capabilities(identifier),
+        ],
+        "features": contract.features.copy() if contract else None,
         **extra,
     }
 
@@ -143,7 +183,7 @@ def adapter_capabilities() -> list[dict]:
                     "configured",
                     "License and seat availability verified at launch",
                 )
-        except (ImportError, OSError, ValueError):
+        except (ImportError, OSError, RuntimeError, ValueError):
             cloak_status, cloak_reason = (
                 "unsupported_platform",
                 "CloakBrowser could not inspect its platform binary",
@@ -157,10 +197,7 @@ def adapter_capabilities() -> list[dict]:
             version=cloak_version,
             binary_version=info.get("version"),
             max_concurrency=1 if os.environ.get("ABRL_CLOAK_TIER", "free") == "free" else None,
-            limitations=[
-                "Free tier: one seat and no exact binary pinning",
-                "Vendor-default baseline; humanize disabled",
-            ],
+            limitations=["Free tier: one seat and no exact binary pinning"],
         )
     )
     sdk = package_version("kameleo.local-api-client")
@@ -186,26 +223,6 @@ def adapter_capabilities() -> list[dict]:
             ],
         )
     )
-    if os.environ.get("ABRL_DEPLOYMENT") == "cloud" and not os.environ.get("ABRL_REMOTE_ADAPTER"):
-        images = {
-            "playwright": "ABRL_BROWSER_IMAGE",
-            "manual_chrome": "ABRL_BROWSER_IMAGE_MANUAL_CHROME",
-            "cloakbrowser": "ABRL_CLOAK_BROWSER_IMAGE",
-            "kameleo": "ABRL_KAMELEO_BROWSER_IMAGE",
-        }
-        for entry in entries:
-            if entry["id"] in images:
-                configured = bool(os.environ.get(images[entry["id"]]))
-                entry.update(
-                    available=configured,
-                    status="configured" if configured else "missing_image",
-                    reason="Remote package, engine and license readiness checked in the admitted runtime"
-                    if configured
-                    else f"Configure {images[entry['id']]} with a tested image digest",
-                    max_concurrency=None
-                    if entry["id"] in {"playwright", "manual_chrome"}
-                    else max(1, int(os.environ.get("ABRL_VENDOR_CAPACITY", "1"))),
-                )
     if os.environ.get("ABRL_BROWSER_WS_ENDPOINT") or os.environ.get("ABRL_EGRESS_PROXY_URL"):
         for entry in entries:
             entry.update(
@@ -246,6 +263,22 @@ async def _close(cleanup, metadata: dict, persistent: bool):
         metadata["cleanup_error"] = "Browser shutdown could not be confirmed; quarantine profile"
 
 
+async def _close_context(context: BrowserContext, browser):
+    if browser is None:
+        await context.close()
+    else:
+        # The owned process must be closed even if its disposable context failed.
+        with suppress(Exception):
+            await context.close()
+        await browser.close()
+
+
+def _launch_failure(browser: str, exc: Exception) -> AdapterUnavailable:
+    if isinstance(exc, (PlaywrightTimeout, TimeoutError, httpx.TimeoutException)):
+        return AdapterUnavailable(f"{browser} startup exceeded its deadline", "launch_timeout")
+    return AdapterUnavailable(f"{browser} could not start an isolated session", "launch_failed")
+
+
 @asynccontextmanager
 async def launch_adapter(
     adapter: str,
@@ -259,7 +292,32 @@ async def launch_adapter(
     debug_port: int | None = None,
     proxy_auth: dict | None = None,
     child_env: dict | None = None,
+    user_agent: str | None = None,
+    device_preset: DevicePreset | None = None,
+    batch_preset: dict | None = None,
+    kameleo_fixture: bool = False,
 ) -> AsyncIterator[BrowserRuntime]:
+    try:
+        user_agent = validate_user_agent(user_agent)
+        device = device_viewport(device_preset)
+    except ValueError as exc:
+        raise AdapterUnavailable(str(exc), "invalid_configuration") from exc
+    if user_agent is not None and not supports_user_agent_override(adapter):
+        raise AdapterUnavailable("Custom User-Agent requires Playwright Chromium", "unsupported_operation")
+    responsive = None
+    if batch_preset is not None:
+        responsive = preset_details(batch_preset)
+        contract = adapter_contract(adapter)
+        if (
+            responsive is None or contract is None or remote is not None
+            or responsive["application"] != contract.features["batch_preset_application"]
+            or user_agent is not None or device is not None
+        ):
+            raise AdapterUnavailable(
+                "Batch presets require a compatible local adapter with browser-default identity",
+                "invalid_configuration",
+            )
+
     if remote is not None:
         if adapter not in {"playwright", "manual_chrome", "cloakbrowser", "kameleo"}:
             raise AdapterUnavailable(
@@ -267,16 +325,23 @@ async def launch_adapter(
             )
         from .remote_browser import remote_adapter
 
+        metadata["runtime_stopped"] = False
         async with remote_adapter(
-            remote, profile_dir, metadata, expected_compatibility, adapter=adapter
+            remote,
+            profile_dir,
+            metadata,
+            expected_compatibility,
+            adapter=adapter,
+            user_agent=user_agent,
+            device_preset=device_preset,
         ) as runtime:
             yield runtime
         return
     _check_capability(adapter)
     metadata.update(
         profile_saved=False,
-        browser_closed=False,
-        runtime_stopped=False,
+        browser_closed=True,
+        runtime_stopped=True,
         wrapper_version=package_version(
             "cloakbrowser"
             if adapter == "cloakbrowser"
@@ -285,31 +350,70 @@ async def launch_adapter(
             else "playwright"
         ),
     )
-    lock = ProfileLock(profile_dir) if profile_dir else None
-    if lock:
-        lock.acquire()
+    if (
+        expected_compatibility is not None
+        and "wrapper_version" in expected_compatibility
+        and expected_compatibility["wrapper_version"] != metadata["wrapper_version"]
+    ):
+        metadata["profile_compatible"] = False
+        raise AdapterUnavailable(
+            "Persistent profile browser/platform compatibility does not match", "profile_incompatible"
+        )
+    if expected_compatibility is not None and (not profile_dir or not Path(profile_dir).is_dir()):
+        raise AdapterUnavailable("The saved browser profile directory is missing", "profile_restore_failed")
     arguments = [*NETWORK_ARGS]
     if debug_port is not None:
         if not 1 <= debug_port <= 65535:
             raise AdapterUnavailable("Invalid internal CDP port")
         arguments.append(f"--remote-debugging-port={debug_port}")
-    proxy_settings = {"server": proxy_url, **(proxy_auth or {})}
+    proxy_settings = {**(proxy_auth or {}), "server": proxy_url}
+    lock = ProfileLock(profile_dir) if profile_dir else None
+    if lock:
+        try:
+            lock.acquire()
+        except ProfileStorageError:
+            metadata.update(browser_closed=False, runtime_stopped=False)
+            raise
+        except OSError:
+            raise AdapterUnavailable("The browser profile directory could not be opened", "profile_unavailable") from None
     try:
+        profile_launch_state = "fresh"
+        if profile_dir and adapter != "kameleo":
+            state_file = Path(profile_dir, "Local State")
+            try:
+                restored = not state_file.is_symlink() and state_file.is_file() and state_file.stat().st_size > 0
+            except OSError:
+                raise AdapterUnavailable("The saved browser profile state could not be read", "profile_restore_failed") from None
+            if expected_compatibility is not None and not restored:
+                raise AdapterUnavailable("The saved browser profile state is missing or empty", "profile_restore_failed")
+            profile_launch_state = "restored" if restored else "initialized"
         if adapter == "manual_chrome":
             async with _native_chrome(
                 proxy_url, profile_dir, metadata, proxy_auth=proxy_auth, child_env=child_env
             ) as runtime:
+                metadata["profile_launch_state"] = profile_launch_state
                 yield runtime
             return
         if adapter == "kameleo":
-            async with _kameleo(proxy_url, profile_dir, metadata, proxy_auth=proxy_auth) as runtime:
+            async with _kameleo(
+                proxy_url,
+                profile_dir,
+                metadata,
+                proxy_auth=proxy_auth,
+                fixture=kameleo_fixture,
+                restore_profile=expected_compatibility is not None,
+            ) as runtime:
                 yield runtime
             return
         if adapter == "cloakbrowser":
-            cloak = importlib.import_module("cloakbrowser")
-            license_info = await asyncio.to_thread(
-                cloak.validate_license, os.environ["CLOAKBROWSER_LICENSE_KEY"]
-            )
+            license_key = os.environ.get("CLOAKBROWSER_LICENSE_KEY")
+            if not license_key:
+                raise AdapterUnavailable("CloakBrowser license is not configured", "missing_license")
+            try:
+                cloak = importlib.import_module("cloakbrowser")
+                license_info = await asyncio.to_thread(cloak.validate_license, license_key)
+            except (ImportError, OSError, RuntimeError, ValueError, httpx.HTTPError):
+                raise AdapterUnavailable("CloakBrowser license could not be verified", "unverified_license") from None
             if license_info is None or not license_info.valid:
                 raise AdapterUnavailable("CloakBrowser license could not be verified", "unverified_license")
             metadata["license_plan"] = license_info.plan
@@ -317,10 +421,13 @@ async def launch_adapter(
                 raise AdapterUnavailable(
                     "Exact CloakBrowser version pinning requires Pro", "incompatible_license"
                 )
-            licensing = importlib.import_module("cloakbrowser.license")
-            seats = await asyncio.to_thread(
-                licensing.get_session_seats, os.environ["CLOAKBROWSER_LICENSE_KEY"]
-            )
+            try:
+                licensing = importlib.import_module("cloakbrowser.license")
+                seats = await asyncio.to_thread(licensing.get_session_seats, license_key)
+            except (ImportError, OSError, RuntimeError, ValueError, httpx.HTTPError):
+                raise AdapterUnavailable(
+                    "CloakBrowser seat availability could not be verified", "capacity_unverified"
+                ) from None
             metadata["license_capacity"] = {
                 "active": seats.active,
                 "limit": seats.limit,
@@ -335,80 +442,114 @@ async def launch_adapter(
             kwargs = dict(
                 headless=headless,
                 proxy=proxy_settings,
-                args=arguments + (["--license-route=proxy"] if child_env is not None else []),
-                humanize=False,
-                geoip=False,
+                args=[*arguments, "--license-route=proxy"],
+                humanize=True,
+                geoip=True,
                 accept_downloads=False,
                 service_workers="block",
             )
+            browser = None
             try:
-                browser = None
+                metadata.update(browser_closed=False, runtime_stopped=False)
                 if profile_dir:
                     if child_env is not None:
                         kwargs["env"] = child_env
-                    context = await cloak.launch_persistent_context_async(profile_dir, **kwargs)
+                    context = await cloak.launch_persistent_context_async(
+                        profile_dir, timeout=_LAUNCH_TIMEOUT_MS, **kwargs
+                    )
                 elif child_env is not None:
                     launch_kwargs = {
                         k: v for k, v in kwargs.items() if k not in {"accept_downloads", "service_workers"}
                     }
-                    browser = await cloak.launch_async(**launch_kwargs, env=child_env)
+                    browser = await cloak.launch_async(**launch_kwargs, env=child_env, timeout=_LAUNCH_TIMEOUT_MS)
                     context = await browser.new_context(accept_downloads=False, service_workers="block")
                 else:
-                    context = await cloak.launch_context_async(**kwargs)
+                    # This helper sends extra keywords to new_context rather than launch.
+                    async with asyncio.timeout(_LAUNCH_TIMEOUT_MS / 1000):
+                        context = await cloak.launch_context_async(**kwargs)
             except BaseException as exc:
                 if browser is not None:
                     await _close(browser.close, metadata, False)
-                if not isinstance(exc, RuntimeError):
-                    raise
-                raise AdapterUnavailable(
-                    "CloakBrowser could not acquire its licensed runtime", "license_or_launch_error"
-                ) from exc
+                if isinstance(exc, (PlaywrightError, OSError, RuntimeError, ValueError, httpx.HTTPError)):
+                    failure = _launch_failure("CloakBrowser", exc)
+                    if failure.status == "launch_failed" and isinstance(exc, RuntimeError):
+                        failure = AdapterUnavailable(
+                            "CloakBrowser could not acquire its licensed runtime", "license_or_launch_error"
+                        )
+                    raise failure from None
+                raise
             try:
+                metadata["profile_launch_state"] = profile_launch_state
                 yield BrowserRuntime(context, metadata)
             finally:
-
-                async def cleanup():
-                    await context.close()
-                    if browser:
-                        await browser.close()
-
-                await _close(cleanup, metadata, bool(profile_dir))
+                await _close(lambda: _close_context(context, browser), metadata, bool(profile_dir))
             return
-        async with async_playwright() as driver:
+        async with AsyncExitStack() as stack:
             kwargs = dict(
                 headless=headless,
                 chromium_sandbox=True,
                 proxy=proxy_settings,
                 args=arguments,
+                timeout=_LAUNCH_TIMEOUT_MS,
                 **({"env": child_env} if child_env is not None else {}),
             )
             kwargs["channel"] = "chromium"
             metadata["launch_mode"] = "playwright_launcher"
-            browser = None
-            if profile_dir:
-                context = await driver.chromium.launch_persistent_context(
-                    profile_dir, accept_downloads=False, service_workers="block", **kwargs
+            context_options = dict(accept_downloads=False, service_workers="block")
+            if user_agent is not None:
+                context_options["user_agent"] = user_agent
+            if device:
+                context_options.update(
+                    viewport=device.size,
+                    screen=device.size,
+                    device_scale_factor=device.scale,
+                    is_mobile=True,
+                    has_touch=True,
                 )
-            else:
-                browser = await driver.chromium.launch(**kwargs)
-                try:
-                    context = await browser.new_context(accept_downloads=False, service_workers="block")
-                except BaseException:
-                    await browser.close()
-                    raise
-
-            async def cleanup():
-                await context.close()
-                if browser:
-                    await browser.close()
+            if responsive is not None:
+                context_options.update(
+                    viewport=responsive["viewport"],
+                    screen=responsive["viewport"],
+                    device_scale_factor=responsive["device_pixel_ratio"],
+                    locale=responsive["locale"],
+                    timezone_id=responsive["timezone"],
+                )
+            browser = None
+            try:
+                driver = await stack.enter_async_context(async_playwright())
+                metadata.update(browser_closed=False, runtime_stopped=False)
+                if profile_dir:
+                    context = await driver.chromium.launch_persistent_context(
+                        profile_dir, **context_options, **kwargs
+                    )
+                else:
+                    browser = await driver.chromium.launch(**kwargs)
+                    context = await browser.new_context(**context_options)
+            except BaseException as exc:
+                if browser is not None:
+                    await _close(browser.close, metadata, False)
+                elif isinstance(exc, PlaywrightError) and not metadata["runtime_stopped"]:
+                    # A driver-reported startup failure can still own a partially
+                    # launched process. Shut the driver down before releasing capacity.
+                    await _close(stack.aclose, metadata, False)
+                if isinstance(exc, (PlaywrightError, OSError, RuntimeError, ValueError)):
+                    raise _launch_failure("Playwright Chromium", exc) from None
+                raise
 
             try:
+                metadata["profile_launch_state"] = profile_launch_state
+                if user_agent is not None:
+                    metadata["configured_user_agent"] = user_agent
                 yield BrowserRuntime(context, metadata)
             finally:
-                await _close(cleanup, metadata, bool(profile_dir))
+                await _close(lambda: _close_context(context, browser), metadata, bool(profile_dir))
     finally:
         if lock:
-            lock.release()
+            try:
+                lock.release()
+            except OSError:
+                metadata["profile_saved"] = False
+                metadata.setdefault("cleanup_error", "Browser profile lock release could not be confirmed")
 
 
 @asynccontextmanager
@@ -416,69 +557,86 @@ async def _native_chrome(
     proxy_url: str, profile_dir: str | None, metadata: dict, *, proxy_auth=None, child_env=None
 ):
     """Native Chrome process; CDP attaches only after normal application launch."""
+    executable = chrome_path()
+    if executable is None:
+        raise AdapterUnavailable("Native Chrome executable is unavailable", "missing_binary")
     directory = profile_dir or tempfile.mkdtemp(prefix="abrl-manual-chrome-")
-    with socket.socket() as reservation:
-        reservation.bind(("127.0.0.1", 0))
-        port = reservation.getsockname()[1]
-    process = browser = None
+    process = None
+    spawn_failed = True
     clean = False
     metadata.update(
         launch_mode="native_subprocess",
         controller_attachment="CDP observation and operator input",
         ground_truth="human",
-        baseline_limitation="CDP and target-scope interception are attached; this is distinct from the unattached manual lab control",
+        baseline_limitation="CDP and target-scope interception are active",
     )
     try:
-        process = await asyncio.create_subprocess_exec(
-            chrome_path(),
-            f"--user-data-dir={directory}",
-            f"--remote-debugging-port={port}",
-            "--remote-debugging-address=127.0.0.1",
-            "--no-first-run",
-            f"--proxy-server={proxy_url}",
-            *NETWORK_ARGS,
-            "about:blank",
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-            start_new_session=True,
-            env=child_env,
-        )
-        async with httpx.AsyncClient(trust_env=False, timeout=1) as client:
-            for _ in range(100):
-                if process.returncode is not None:
-                    raise AdapterUnavailable(
-                        "Native Chrome exited before its observation port became ready", "launch_failed"
-                    )
+        async with AsyncExitStack() as stack:
+            try:
+                with socket.socket() as reservation:
+                    reservation.bind(("127.0.0.1", 0))
+                    port = reservation.getsockname()[1]
+                metadata.update(browser_closed=False, runtime_stopped=False)
+                spawn_failed = False
                 try:
-                    response = await client.get(f"http://127.0.0.1:{port}/json/version")
-                    if response.is_success:
-                        metadata["cdp_endpoint"] = response.json()["webSocketDebuggerUrl"]
-                        break
-                except httpx.TransportError:
-                    pass
-                await asyncio.sleep(0.1)
-            else:
-                raise AdapterUnavailable(
-                    "Native Chrome observation port did not become ready", "launch_timeout"
-                )
-        async with async_playwright() as driver:
-            browser = await driver.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
-            if len(browser.contexts) != 1:
-                raise AdapterUnavailable("Native Chrome must expose one dedicated profile context")
-            if proxy_auth:
-                await _proxy_authentication(browser.contexts[0], proxy_auth)
+                    process = await asyncio.create_subprocess_exec(
+                        executable,
+                        f"--user-data-dir={directory}",
+                        f"--remote-debugging-port={port}",
+                        "--remote-debugging-address=127.0.0.1",
+                        "--no-first-run",
+                        f"--proxy-server={proxy_url}",
+                        *NETWORK_ARGS,
+                        "about:blank",
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                        start_new_session=True,
+                        env=child_env,
+                    )
+                except OSError:
+                    spawn_failed = True
+                    raise
+                async with asyncio.timeout(10), httpx.AsyncClient(trust_env=False, timeout=1) as client:
+                    while True:
+                        if process.returncode is not None:
+                            raise AdapterUnavailable(
+                                "Native Chrome exited before its observation port became ready", "launch_failed"
+                            )
+                        try:
+                            response = await client.get(f"http://127.0.0.1:{port}/json/version")
+                        except httpx.TransportError:
+                            pass
+                        else:
+                            if response.is_success:
+                                metadata["cdp_endpoint"] = response.json()["webSocketDebuggerUrl"]
+                                break
+                        await asyncio.sleep(0.1)
+                driver = await stack.enter_async_context(async_playwright())
+                async with asyncio.timeout(_LAUNCH_TIMEOUT_MS / 1000):
+                    browser = await driver.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+                    if len(browser.contexts) != 1:
+                        raise AdapterUnavailable(
+                            "Native Chrome must expose one dedicated profile context", "launch_failed"
+                        )
+                    if proxy_auth:
+                        await _proxy_authentication(browser.contexts[0], proxy_auth)
+            except AdapterUnavailable:
+                raise
+            except (PlaywrightError, OSError, RuntimeError, ValueError, KeyError) as exc:
+                raise _launch_failure("Native Chrome", exc) from None
             try:
                 yield BrowserRuntime(browser.contexts[0], metadata)
             finally:
                 try:
-                    if process.returncode is None:
+                    async with asyncio.timeout(10):
                         session = await browser.new_browser_cdp_session()
                         await session.send("Browser.close")
-                    await asyncio.wait_for(process.wait(), timeout=10)
-                    clean = process.returncode == 0
+                        await process.wait()
+                        clean = process.returncode == 0
                 except Exception:
                     clean = False
-                await browser.close()
+                with suppress(Exception), asyncio.timeout(5):
+                    await browser.close()
     finally:
         if process and process.returncode is None:
             with suppress(ProcessLookupError):
@@ -488,16 +646,19 @@ async def _native_chrome(
             except TimeoutError:
                 with suppress(ProcessLookupError):
                     os.killpg(process.pid, signal.SIGKILL)
-                await process.wait()
-        stopped = process is not None and process.returncode is not None
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(process.wait(), 3)
+        stopped = spawn_failed or (process is not None and process.returncode is not None)
         metadata.update(
             runtime_stopped=stopped, browser_closed=stopped, profile_saved=bool(profile_dir and clean)
         )
-        if profile_dir and not clean:
+        if not stopped:
+            metadata["cleanup_error"] = "Native Chrome shutdown could not be confirmed"
+        if profile_dir and not clean and not spawn_failed:
             metadata["profile_save_failed"] = True
-            metadata["cleanup_error"] = "Native Chrome did not confirm a clean profile shutdown"
-        if not profile_dir:
-            shutil.rmtree(directory, ignore_errors=True)
+            metadata.setdefault("cleanup_error", "Native Chrome did not confirm a clean profile shutdown")
+        if not profile_dir and stopped:
+            await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
 
 
 async def _proxy_authentication(context, proxy_auth):
@@ -532,7 +693,7 @@ async def _proxy_authentication(context, proxy_auth):
 
 async def _sdk_call(method, *args, **kwargs):
     """SDK networking is blocking; timeouts also bound cancellation cleanup."""
-    kwargs["_request_timeout"] = 15.0
+    kwargs.setdefault("_request_timeout", 15.0)
     task = asyncio.create_task(asyncio.to_thread(method, *args, **kwargs))
     try:
         return await asyncio.shield(task)
@@ -550,28 +711,85 @@ async def _sdk_call(method, *args, **kwargs):
 
 @asynccontextmanager
 async def _kameleo(
-    proxy_url: str, profile_dir: str | None, metadata: dict, *, proxy_auth: dict | None = None
+    proxy_url: str,
+    profile_dir: str | None,
+    metadata: dict,
+    *,
+    proxy_auth: dict | None = None,
+    fixture: bool = False,
+    restore_profile: bool = False,
 ):
+    metadata.update(browser_closed=True, runtime_stopped=True)
+    archive = Path(profile_dir).resolve() / "profile.kameleo" if profile_dir else None
+    if archive is not None and (archive.exists() or archive.is_symlink()):
+        restore_profile = True
+    if restore_profile and (
+        archive is None or archive.is_symlink() or not archive.is_file() or not archive.stat().st_size
+    ):
+        raise AdapterUnavailable("The saved Kameleo profile archive is missing or empty", "profile_restore_failed")
+
     from kameleo.local_api_client import KameleoLocalApiClient
+    from kameleo.local_api_client.exceptions import ApiException
     from kameleo.local_api_client.models import (
         BrowserSettings,
         CreateProfileRequest,
         ExportProfileRequest,
         ImportProfileRequest,
+        ProxyChoice,
+        Server,
+        UpdateProfileRequest,
     )
+    from urllib3.exceptions import MaxRetryError
+    from urllib3.exceptions import TimeoutError as HTTPTimeout
 
-    endpoint = os.environ["ABRL_KAMELEO_ENDPOINT"].rstrip("/")
-    parsed = urlsplit(endpoint)
-    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.path:
+    endpoint = os.environ.get("ABRL_KAMELEO_ENDPOINT", "").rstrip("/")
+    try:
+        parsed = urlsplit(endpoint)
+        engine_port = parsed.port or 80
+        broker = urlsplit(proxy_url)
+        broker_port = broker.port
+    except ValueError:
+        raise AdapterUnavailable("Invalid Kameleo Engine or broker endpoint", "invalid_configuration") from None
+    if (
+        parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}
+        or parsed.path or parsed.username or parsed.password or parsed.query or parsed.fragment
+    ):
         raise AdapterUnavailable(
             "Kameleo must share the worker network namespace and export volume", "unsupported_operation"
         )
+    if (
+        broker.scheme != "http" or broker.hostname != "127.0.0.1" or not broker_port
+        or broker.username or broker.password or broker.path or broker.query or broker.fragment
+    ):
+        raise AdapterUnavailable("Kameleo requires a loopback broker", "unsupported_operation")
+    profile_proxy = ProxyChoice(value="http", extra=Server(host=broker.hostname, port=broker_port))
+    arguments = []
+    for argument in NETWORK_ARGS:
+        switch, _, value = argument.partition("=")
+        if switch == "--host-resolver-rules":
+            argument = f'{switch}="{value}"'
+        elif switch == "--proxy-bypass-list":
+            # Chroma's startup callback goes to the Engine's own API port.
+            argument = f"{argument};127.0.0.1:{engine_port}"
+        arguments.append(argument)
     client = KameleoLocalApiClient(endpoint=endpoint)
     profile = None
+    profile_operation_started = False
+    runtime_delivered = False
+    workflow_error = None
     stopped = False
-    archive = Path(profile_dir) / "profile.kameleo" if profile_dir else None
+    start_pending = False
     try:
-        await _sdk_call(client.general.healthcheck)
+        try:
+            await _sdk_call(client.general.healthcheck)
+        except (ConnectionError, TimeoutError, MaxRetryError, HTTPTimeout) as exc:
+            raise AdapterUnavailable("Kameleo Engine did not respond to its local health check", "engine_unavailable") from exc
+        except ApiException as exc:
+            if exc.status in {401, 403}:
+                raise AdapterUnavailable("Kameleo Engine rejected the local health check", "engine_auth_failed") from None
+            if exc.status not in {429, 502, 503, 504}:
+                raise
+            raise AdapterUnavailable("Kameleo Engine health check is temporarily unavailable", "engine_unavailable") from exc
         info = await _sdk_call(client.general.get_user_info)
         engine = info.version
         sdk = package_version("kameleo.local-api-client")
@@ -590,10 +808,14 @@ async def _kameleo(
                 raise AdapterUnavailable(
                     "Kameleo running-profile capacity is exhausted", "capacity_exhausted"
                 )
-        if archive and archive.exists():
+        if restore_profile:
+            profile_operation_started = True
             profile = await _sdk_call(
                 client.profile.import_profile,
                 import_profile_request=ImportProfileRequest(path=str(archive.resolve())),
+            )
+            await _sdk_call(
+                client.profile.update_profile, profile.id, UpdateProfileRequest(proxy=profile_proxy)
             )
         else:
             fingerprints = await _sdk_call(
@@ -601,74 +823,126 @@ async def _kameleo(
             )
             if not fingerprints:
                 raise AdapterUnavailable("No Chroma browser fingerprint is available", "missing_binary")
+            profile_operation_started = True
             profile = await _sdk_call(
                 client.profile.create_profile,
                 CreateProfileRequest(
                     fingerprint_id=fingerprints[0].id,
-                    name="ABRL research session",
+                    name="ABRL browser session",
                     start_page="about:blank",
+                    proxy=profile_proxy,
                 ),
             )
         metadata["vendor_profile_id"] = str(profile.id)
-        # Documented start arguments route the browser to our credential-free
-        # broker. No stored provider proxy and no automatic external proxy test.
-        await _sdk_call(
-            client.profile.start_profile,
-            profile.id,
-            BrowserSettings(arguments=[*NETWORK_ARGS, f"--proxy-server={proxy_url}"]),
-        )
-        async with async_playwright() as driver:
-            browser = await driver.chromium.connect_over_cdp(
-                endpoint.replace("http://", "ws://", 1) + f"/playwright/{profile.id}", timeout=90_000
-            )
-            if len(browser.contexts) != 1:
-                raise AdapterUnavailable(
-                    "Kameleo must expose exactly one context per profile", "incompatible_version"
-                )
-            metadata["cdp_endpoint"] = endpoint.replace("http://", "ws://", 1) + f"/playwright/{profile.id}"
-            if proxy_auth:
-                await _proxy_authentication(browser.contexts[0], proxy_auth)
+        settings = BrowserSettings(arguments=arguments)
+        metadata.update(browser_closed=False, runtime_stopped=False)
+        start_pending = True
+        try:
+            await _sdk_call(client.profile.start_profile, profile.id, settings, _request_timeout=30.0)
+        except ApiException as exc:
+            start_pending = exc.error_code != "validation_failed"
+            raise
+        start_pending = False
+        async with AsyncExitStack() as stack:
+            browser = None
             try:
-                yield BrowserRuntime(browser.contexts[0], metadata)
+                try:
+                    driver = await stack.enter_async_context(async_playwright())
+                    cdp_endpoint = endpoint.replace("http://", "ws://", 1) + f"/playwright/{profile.id}"
+                    browser = await driver.chromium.connect_over_cdp(cdp_endpoint, timeout=_LAUNCH_TIMEOUT_MS)
+                    if len(browser.contexts) != 1:
+                        raise AdapterUnavailable(
+                            "Kameleo must expose exactly one context per profile", "incompatible_version"
+                        )
+                    if proxy_auth:
+                        await _proxy_authentication(browser.contexts[0], proxy_auth)
+                except AdapterUnavailable:
+                    raise
+                except (PlaywrightError, OSError, RuntimeError, ValueError) as exc:
+                    raise _launch_failure("Kameleo CDP", exc) from None
+                metadata["cdp_endpoint"] = cdp_endpoint
+                metadata["profile_launch_state"] = (
+                    "restored" if restore_profile else "initialized" if profile_dir else "fresh"
+                )
+                runtime_delivered = True
+                try:
+                    yield BrowserRuntime(browser.contexts[0], metadata)
+                except BaseException as exc:
+                    workflow_error = exc
+                    raise
+                finally:
+                    # CDP disconnect alone cannot stop the engine-owned profile.
+                    await _sdk_call(client.profile.stop_profile, profile.id)
+                    stopped = True
+                    metadata["browser_closed"] = True
+                    metadata["runtime_stopped"] = True
             finally:
-                # Stop the engine profile first. CDP disconnect alone does not
-                # guarantee process shutdown or preserve browser state.
-                await _sdk_call(client.profile.stop_profile, profile.id)
-                stopped = True
-                metadata["browser_closed"] = True
-                metadata["runtime_stopped"] = True
-                await browser.close()
-                if archive:
-                    temporary = archive.with_suffix(".pending.kameleo")
-                    await _sdk_call(
-                        client.profile.export_profile,
-                        profile.id,
-                        export_profile_request=ExportProfileRequest(path=str(temporary.resolve())),
-                    )
-                    if not temporary.is_file() or temporary.stat().st_size == 0:
-                        raise AdapterUnavailable("Kameleo export did not produce a profile archive")
-                    os.replace(temporary, archive)
+                if browser is not None:
+                    with suppress(Exception), asyncio.timeout(5):
+                        await browser.close()
+                if archive and stopped and runtime_delivered:
+                    await _sdk_call(client.profile.update_profile, profile.id, UpdateProfileRequest(proxy=None))
+                    temporary = archive.with_suffix(f".pending-{uuid4().hex}.kameleo")
+                    try:
+                        await _sdk_call(
+                            client.profile.export_profile,
+                            profile.id,
+                            export_profile_request=ExportProfileRequest(path=str(temporary)),
+                        )
+                        if temporary.is_symlink() or not temporary.is_file() or temporary.stat().st_size == 0:
+                            raise AdapterUnavailable("Kameleo export did not produce a profile archive")
+                        os.replace(temporary, archive)
+                    except ApiException as exc:
+                        if exc.error_code != "no_capability":
+                            raise
+                        raise AdapterUnavailable(
+                            "Kameleo profile export is unavailable to the configured license",
+                            "persistent_export_unavailable",
+                        ) from None
+                    finally:
+                        temporary.unlink(missing_ok=True)
                     metadata["profile_saved"] = True
-    except AdapterUnavailable:
-        if archive and not metadata.get("profile_saved"):
-            metadata["profile_save_failed"] = True
-        raise
     except Exception as exc:
-        if archive and not metadata.get("profile_saved"):
+        if archive and profile_operation_started and not metadata.get("profile_saved"):
             metadata["profile_save_failed"] = True
+        if workflow_error is not None and workflow_error is not exc:
+            raise workflow_error from None
+        if isinstance(exc, AdapterUnavailable) or workflow_error is exc:
+            raise
         raise AdapterUnavailable(
             "Kameleo lifecycle failed; inspect the engine's private logs", "engine_error"
-        ) from exc
+        ) from None
     finally:
         if profile:
             try:
+                shutdown_confirmed = True
                 if not stopped:
-                    await _sdk_call(client.profile.stop_profile, profile.id)
-                    metadata["browser_closed"] = True
-                    metadata["runtime_stopped"] = True
-                # Retain the vendor profile when export was uncertain, for recovery.
-                if not archive or metadata.get("profile_saved"):
-                    await _sdk_call(client.profile.delete_profile, profile.id)
+                    try:
+                        await _sdk_call(client.profile.stop_profile, profile.id)
+                    except Exception:
+                        status = await _sdk_call(client.profile.get_profile_status, profile.id)
+                        if status.lifetime_state not in {"created", "terminated"}:
+                            raise
+                        # A timed-out start can still reach the engine after a status read.
+                        shutdown_confirmed = not start_pending
+                # Keep an unsaved delivered profile for recovery. A startup-only
+                # profile is disposable once the Engine confirms shutdown.
+                if not archive or not runtime_delivered or metadata.get("profile_saved"):
+                    try:
+                        await _sdk_call(client.profile.delete_profile, profile.id)
+                        shutdown_confirmed = True
+                    except Exception as exc:
+                        if not shutdown_confirmed or (
+                            isinstance(exc, ApiException)
+                            and exc.error_code in {"profile_running", "profile_already_running"}
+                        ):
+                            raise
+                        metadata["vendor_profile_cleanup_error"] = (
+                            "Kameleo could not delete the stopped profile"
+                        )
+                if not shutdown_confirmed:
+                    raise AdapterUnavailable("Kameleo startup outcome is uncertain")
+                metadata.update(browser_closed=True, runtime_stopped=True)
             except Exception:
                 metadata["profile_saved"] = False
                 metadata["browser_closed"] = False

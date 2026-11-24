@@ -1,16 +1,14 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
-  ArrowRight,
   Check,
   ChevronRight,
   Clock3,
   Download,
   CopyPlus,
-  Layers3,
   Monitor,
   MousePointer2,
   Pause,
@@ -24,10 +22,13 @@ import {
 import {
   api,
   dateTime,
+  ApiError,
   label,
   ms,
   request,
   saveFile,
+  validateWorkflowUrlOverrides,
+  workflowUrlParameterNames,
   type Target,
   type Workflow,
 } from "@/lib/api";
@@ -44,6 +45,7 @@ import {
   sessionActive,
   humanValue,
 } from "@/lib/platform";
+import type { components } from "@/lib/schema";
 import {
   Badge,
   Empty,
@@ -54,42 +56,351 @@ import {
   Select,
 } from "./ui";
 import { DetailGrid, ListControls, Modal, Pagination, Segments, useListState } from "./platform-ui";
-import { SessionTemplates } from "./session-templates";
+import { BatchCatalog, BatchPresetFields, BatchReadinessNotices, useBatchPreflight, WorkflowValuesFields } from "./batch-setup";
+import { DiagnosticBundleExport } from "./session-diagnostic-export";
+import { DiagnosticCapabilities, LifecycleTimeline, NavigationConnects } from "./session-diagnostics";
+import { RecordingAction, SessionRecordingPlayer } from "./session-recording";
+import { SessionTemplates, type SessionTemplate } from "./session-templates";
+import { WorkflowUrlParameters } from "./workflow-url-parameters";
+import {
+  allAdaptersSupport,
+  deviceModeLabel,
+  devicePresetLabel,
+  DevicePresetField,
+  UserAgentField,
+  validUserAgent,
+} from "./session-browser-settings";
+
+type BatchIPSummary = components["schemas"]["BatchIPSummary"];
+type BatchProxyCheckIPSummary = components["schemas"]["BatchProxyCheckIPSummary"];
+
+const adscoreRequestFailureLabels = {
+  scope_blocked: "Blocked by ABRL scope",
+  network_error: "Browser network error",
+  http_error: "HTTP error",
+} as const;
+
+type AdScoreRequestFailure = {
+  url: string;
+  kind: keyof typeof adscoreRequestFailureLabels;
+  method: string;
+  resource_type: string;
+  phase: string;
+  step: number;
+  status?: number;
+  error?: string;
+};
+
+type AdScoreMeasurementRequest = {
+  url: string;
+  method: string;
+  status?: number;
+  error?: string;
+  referrer_origin?: string | null;
+};
+
+type AdScoreReferrerPolicy = {
+  url: string;
+  request_policy?: string;
+  document_policy?: string | null;
+};
+
+type AdScoreRequestInitiator = {
+  url: string;
+  status?: number;
+  initiator_type?: string;
+  initiator_origin?: string;
+  document_origin?: string;
+  resource_type?: string;
+  context?: string;
+  initial_referrer_present?: boolean;
+  paused_referrer_present?: boolean;
+  network_referrer_present?: boolean;
+  redirected?: boolean;
+};
+
+function headerPresence(present?: boolean) {
+  return present === undefined ? "Not captured" : present ? "Present" : "Absent";
+}
+
+const proxyCheckIPHint = "Address returned by the post-run provider diagnostic. The website can see a different IP.";
+
+const batchIPStatuses = {
+  duplicate: { label: "Duplicate IPs", tone: "rose" },
+  unique: { label: "Unique", tone: "green" },
+  incomplete: { label: "Incomplete", tone: "amber" },
+  pending: { label: "Pending", tone: "quiet" },
+} as const;
+
+const sessionEventTitles = new Map([
+  ["controlled_research_entry", "Controlled research entry"],
+  ["proxy_preflight", "Decodo pre-flight"],
+  ["proxy_lease_expired", "Proxy lease expired"],
+  ["connection_recovery_queued", "Connection recovery queued"],
+  ["session_started", "Session attempt started"],
+  ["operator_step_reserved", "Step reserved for operator"],
+  ["session_attempt_finished", "Session attempt finished"],
+  ["session_finished", "Session finished"],
+]);
+
+const proxyTransportTitles = new Map([
+  ["proxy_gateway_timeout", "Proxy gateway timed out"],
+  ["proxy_tunnel_timeout", "Proxy tunnel timed out"],
+  ["proxy_tunnel_failed", "Proxy tunnel failed"],
+  ["proxy_destination_denied", "Proxy denied CONNECT destination"],
+]);
+
+function sessionEventTitle(kind: string, detail?: Record<string, unknown>) {
+  if (kind === "proxy_transport_issue") {
+    const reason = detail?.reason;
+    return (typeof reason === "string" && proxyTransportTitles.get(reason)) || "Proxy transport issue";
+  }
+  return sessionEventTitles.get(kind) ?? label(kind);
+}
+
+function sessionEventDetail(kind: string, detail: Record<string, unknown>) {
+  if (kind === "operator_step_reserved") {
+    const path = Array.isArray(detail.step_path) && detail.step_path.length > 0
+      ? detail.step_path.join(".")
+      : detail.step;
+    return [path && `Step ${path}`, typeof detail.action === "string" && label(detail.action)].filter(Boolean).join(" · ");
+  }
+  if (kind === "proxy_preflight") {
+    return [`Attempt ${detail.attempt}`, label(String(detail.status)), detail.reason && label(String(detail.reason))].filter(Boolean).join(" · ");
+  }
+  if (kind === "controlled_research_entry" ||
+    (kind === "provider_observation" && "received_referrer_host" in detail)) {
+    const referrerHost = typeof detail.received_referrer_host === "string"
+      ? detail.received_referrer_host
+      : "unavailable";
+    const referrer = `Received referrer host ${referrerHost}`;
+    if (kind === "controlled_research_entry") return referrer;
+
+    return [
+      referrer,
+      typeof detail.callback_state === "string" && `Callback ${label(detail.callback_state)}`,
+      typeof detail.callback_error === "number" && `Callback code ${detail.callback_error}`,
+      typeof detail.signature_present === "boolean" &&
+        (detail.signature_present ? "Signature present" : "Signature absent"),
+      typeof detail.verification === "string" && `Verification ${label(detail.verification)}`,
+      typeof detail.verification_reason === "string" && `Verification reason ${label(detail.verification_reason)}`,
+      typeof detail.raw_code === "number" && `Raw code ${detail.raw_code}`,
+      typeof detail.accepted === "boolean" && `Accepted ${humanValue(detail.accepted)}`,
+    ].filter(Boolean).join(" · ");
+  }
+
+  return Object.entries(detail)
+    .filter(([key]) =>
+      (kind !== "proxy_transport_issue" || key !== "reason") &&
+      !["jpeg_base64", "signature", "token", "password"].includes(key),
+    )
+    .slice(0, kind === "proxy_transport_issue" ? 4 : 3)
+    .map(([key, value]) => key === "upstream_status"
+      ? `Upstream HTTP ${humanValue(value)}`
+      : `${label(key)}: ${humanValue(value)}`)
+    .join(" · ");
+}
+
+function sessionWorkflowLabel({ workflow_name, workflow_version }: BrowserSession) {
+  if (workflow_name && workflow_version != null) return `${workflow_name} · v${workflow_version}`;
+  if (workflow_name) return workflow_name;
+  return workflow_version == null ? "Unavailable" : `Version ${workflow_version}`;
+}
+
+const queueReasons: Record<string, string> = {
+  batch_paused: "Batch is paused", retry_backoff: "Waiting to retry", global_capacity: "Workspace capacity reached",
+  project_capacity: "Project capacity reached", batch_capacity: "Batch concurrency reached",
+  experiment_capacity: "Historical run concurrency reached", site_capacity: "Site capacity reached",
+  site_rate_limit: "Waiting for the site start-rate limit", profile_busy: "Waiting for the profile",
+  worker_unavailable: "Waiting for a worker", worker_capacity: "All worker slots are busy",
+  adapter_capacity: "Browser capacity reached", proxy_capacity: "Waiting for an eligible proxy",
+};
+
+function queueReason(reason?: string | null) {
+  return reason ? queueReasons[reason] ?? label(reason) : null;
+}
+
+function viewportConformance(session: BrowserSession) {
+  const evidence = session.metadata.viewport_conformance as { checks?: unknown; matched?: unknown } | undefined;
+  if (!session.attempt_number || !evidence) return undefined;
+  const { checks, matched } = evidence;
+  if (typeof checks !== "number" || typeof matched !== "number"
+    || !Number.isSafeInteger(checks) || !Number.isSafeInteger(matched)
+    || checks <= 0 || matched < 0 || matched > checks) return undefined;
+  return { checks, matched };
+}
+
+function DecodoPreflight({ report, attempt }: { report: unknown; attempt: number }) {
+  if (!report || typeof report !== "object") return null;
+  const data = report as Record<string, unknown>;
+  if (data.attempt !== attempt || typeof data.status !== "string") return null;
+  const items: [string, string][] = [];
+  const checks = data.checks as Record<string, { status?: string; observed?: unknown; source?: string }> | undefined;
+  for (const [key, title] of [
+    ["exit_ip", "Public exit IP"], ["country", "Country"], ["asn", "ASN"], ["network_type", "Network type"],
+    ["sticky", "Sticky IP"], ["target_tls", "Target TLS"], ["latency", "Tunnel latency"],
+  ]) {
+    const check = checks?.[key];
+    if (!check?.status) continue;
+    const value = check.observed == null ? [] : [humanValue(check.observed)];
+    items.push([title, [...value, label(check.status), ...(check.source ? [label(check.source)] : [])].join(" · ")]);
+  }
+  return <section>
+    <h3>Decodo pre-flight</h3>
+    <p>Attempt {attempt} · {label(data.status)}{typeof data.reason === "string" && ` · ${label(data.reason)}`}</p>
+    <DetailGrid items={items} />
+    <details>
+      <summary>Detailed evidence and timings</summary>
+      <pre className="json-preview">{JSON.stringify({ checks: data.checks, timings_ms: data.timings_ms, probe_attempts: data.probe_attempts }, null, 2)}</pre>
+    </details>
+  </section>;
+}
+
+function BrowserDiagnostic({ data, attempt }: { data: Record<string, unknown>; attempt: number }) {
+  if (typeof data.status !== "string") return null;
+  const checks = data.checks && typeof data.checks === "object" ? Object.entries(data.checks) : [];
+  const checkTitles: Record<string, string> = {
+    ice: "WebRTC ICE", fixture_http_transport: "TCP fixture transport", quic_launch_flag: "QUIC disabled at launch",
+  };
+  const items: [string, string][] = checks.flatMap(([name, status]) => typeof status === "string"
+    ? [[checkTitles[name] ?? label(name), label(status)]] : []);
+  if (!checks.length && ["passed", "mismatch", "unavailable"].includes(String(data.quic_launch_flag))) {
+    items.push([checkTitles.quic_launch_flag, label(String(data.quic_launch_flag))]);
+  }
+  const protocols = data.fixture_http_protocols as Record<string, unknown> | undefined;
+  for (const [field, title] of [["document", "Document protocol"], ["echo", "Echo protocol"]]) {
+    const protocol = protocols?.[field];
+    if (typeof protocol === "string" && ["http/1.0", "http/1.1", "h2", "h3", "unavailable"].includes(protocol)) {
+      items.push([title, protocol]);
+    }
+  }
+  return <section>
+    <h3>Owned browser diagnostics</h3>
+    <p>Attempt {attempt} · {label(data.status)}{typeof data.reason === "string" && ` · ${label(data.reason)}`}</p>
+    {typeof data.failed_check === "string" && <p>First mismatch {label(data.failed_check)}</p>}
+    {items.length > 0 && <DetailGrid items={items} />}
+    {typeof data.minimum_clock_skew_ms === "number" && (
+      <p className="muted small-text">Minimum clock skew {ms(data.minimum_clock_skew_ms)}</p>
+    )}
+    {typeof data.connection_capacity_rejections === "number" && (
+      <p className="muted small-text">Proxy connections rejected at capacity {data.connection_capacity_rejections}</p>
+    )}
+    <DiagnosticCapabilities data={data} />
+  </section>;
+}
+
+function MainOriginFailures({ counts }: { counts: unknown }) {
+  if (!counts || typeof counts !== "object") return null;
+  const totals = counts as Record<string, unknown>;
+  const items: [string, string][] = [];
+  for (const type of [
+    "stylesheet", "script", "image", "font", "media", "manifest", "texttrack", "fetch", "xhr",
+    "eventsource", "ping", "preflight", "other",
+  ]) {
+    const countsByReason = totals[type];
+    if (!countsByReason || typeof countsByReason !== "object") continue;
+    const failures = [];
+    for (const [reason, title] of [
+      ["blocked", "blocked"], ["aborted", "aborted"], ["network_error", "network error"],
+      ["http_4xx", "HTTP 4xx"], ["http_5xx", "HTTP 5xx"],
+    ]) {
+      const count = (countsByReason as Record<string, unknown>)[reason];
+      if (typeof count === "number" && Number.isSafeInteger(count) && count > 0) failures.push(`${title} × ${count}`);
+    }
+    if (failures.length) items.push([label(type), failures.join(" · ")]);
+  }
+  return items.length ? <section><h3>Main-origin subresource failures</h3><DetailGrid items={items} /></section> : null;
+}
+
+function WorkflowFailure({ failure }: { failure: unknown }) {
+  if (!failure || typeof failure !== "object") return null;
+  const detail = failure as Record<string, unknown>;
+  const wait = detail.navigation_wait as Record<string, unknown> | undefined;
+  const tunnelWait = detail.tunnel_wait as Record<string, unknown> | undefined;
+  const timeoutSourceNames = new Map([
+    ["step_override", "Step or workflow override"],
+    ["proxy_policy", "Proxy policy"],
+    ["proxy_default", "Proxy default"],
+    ["direct_default", "Direct connection default"],
+  ]);
+  const timeoutSource = typeof wait?.load_timeout_source === "string"
+    ? timeoutSourceNames.get(wait.load_timeout_source) : undefined;
+  const stageNames: Record<string, string> = {
+    initial_dom_content_loaded: "Initial DOMContentLoaded",
+    post_navigation_dom_content_loaded: "DOMContentLoaded after the hold",
+    post_navigation_delay: "Post-load hold",
+    post_navigation_challenge_check: "Check after navigation",
+    post_step_challenge_check: "Check after the step",
+    url_condition: "URL condition",
+  };
+  const status = detail.status ?? detail.http_status;
+  return <section>
+    <h3>Attempt failure</h3>
+    <DetailGrid items={[
+      ["Step", Array.isArray(detail.step_path) ? detail.step_path.join(".") : String(detail.step_path ?? detail.step ?? "Unrecorded")],
+      ["Action", typeof detail.action === "string" ? label(detail.action) : "Unrecorded"],
+      ["Phase", typeof detail.phase === "string" ? label(detail.phase) : "Unrecorded"],
+      ["Reason", typeof detail.reason === "string" ? label(detail.reason) : "Unrecorded"],
+      ...(typeof status === "number" ? [["HTTP status", status] as [string, number]] : []),
+      ["Elapsed", typeof detail.elapsed_ms === "number" ? ms(detail.elapsed_ms) : "Unrecorded"],
+      ...(typeof wait?.stage === "string"
+        ? [["Waiting for", stageNames[wait.stage] ?? label(wait.stage)] as [string, string]] : []),
+      ...(typeof wait?.deadline === "string" ? [["Deadline", label(wait.deadline)] as [string, string]] : []),
+      ...(typeof wait?.load_timeout_ms === "number"
+        ? [["Initial load timeout", ms(wait.load_timeout_ms)] as [string, string]] : []),
+      ...(typeof wait?.load_timeout_ms === "number" && timeoutSource
+        ? [["Timeout source", timeoutSource] as [string, string]] : []),
+      ...(typeof wait?.post_navigation_wait_ms === "number" && wait.post_navigation_wait_ms > 0
+        ? [["Post-load hold", ms(wait.post_navigation_wait_ms)] as [string, string]] : []),
+      ...(typeof tunnelWait?.stage === "string"
+        ? [["Tunnel stage", label(tunnelWait.stage)] as [string, string]] : []),
+      ...(typeof detail.probe_failure === "string"
+        ? [["Fixture probe", label(detail.probe_failure)] as [string, string]] : []),
+    ]} />
+  </section>;
+}
 
 export function defaultBatch(
   targets: Target[],
   workflows: Workflow[],
+  preview?: Workflow | null,
 ): BatchInput {
   return {
-    name: "Workflow batch",
-    target_id: targets[0]?.id ?? "",
-    workflow_id: workflows[0]?.id ?? "",
-    count: 30,
+    name: preview === undefined ? "Workflow batch" : "Workflow preview",
+    target_id: targets.find((site) => site.live_ready !== false)?.id ?? "",
+    workflow_id: preview?.id ?? workflows[0]?.id ?? "",
+    count: 1,
     concurrency: 1,
     adapters: ["playwright"],
     persistence: "fresh",
-    preparation: {
-      mode: "none",
-      min_seconds: 30,
-      max_seconds: 90,
-      paths: ["/"],
-      idle_timeout_seconds: 900,
-      lifetime_seconds: 3600,
-    },
-    proxy_policy_id: null,
-    mode: "demo",
-    seed: 42,
-    artifact_policy: "none",
+    artifact_policy: "all",
+    capture_javascript: true,
     artifact_retention_days: 30,
-    phase: "pilot",
-    hypothesis: "",
-    reliability_target: 0.95,
     timeout_seconds: 600,
     request_budget: 1000,
     traffic_budget_bytes: 104857600,
     idempotency_key: crypto.randomUUID(),
   };
 }
+
+function policyMatchesTarget(policy: ProxyPolicy, target?: Target): boolean {
+  const origin = policy.target_origin;
+  return !origin || (
+    target?.origin === origin &&
+    [...(target.navigation_origins ?? []), ...(target.resource_origins ?? [])].every(
+      (allowedOrigin) => allowedOrigin === origin,
+    )
+  );
+}
+
+function supportsBatchPresets(value: BatchInput, adapters: Adapter[]): boolean {
+  return value.mode !== "demo" && value.adapters.length > 0
+    && value.user_agent == null && value.device_preset == null
+    && value.adapters.every((id) => adapters.some((adapter) =>
+      adapter.id === id && adapter.features?.batch_preset_application,
+    ));
+}
+
 export function BatchFields({
   token,
   value,
@@ -99,23 +410,42 @@ export function BatchFields({
   adapters,
   policies,
   profiles = [],
+  launchParameters,
+  sessionTemplates = false,
+  onTarget,
+  onWorkflow,
 }: {
   token: string;
   value: BatchInput;
-  onChange: (value: BatchInput) => void;
+  onChange: (value: BatchInput, template?: SessionTemplate) => void;
   targets: Target[];
   workflows: Workflow[];
   adapters: Adapter[];
   policies: ProxyPolicy[];
   profiles?: Profile[];
+  launchParameters?: ReactNode;
+  sessionTemplates?: boolean;
+  onTarget?: (target: Target) => void;
+  onWorkflow?: (workflow: Workflow) => void;
 }) {
+  const [profileLabels, setProfileLabels] = useState<Record<string, string>>({});
   const patch = (update: Partial<BatchInput>) =>
     onChange({ ...value, ...update });
+  const supportsUserAgent = allAdaptersSupport(value.adapters, adapters, "user_agent_override");
+  const selectedAdapters = adapters.filter((adapter) => value.adapters.includes(adapter.id));
+  const contextAdapters = selectedAdapters.filter((adapter) => adapter.features?.batch_preset_application === "context");
+  const operatorAdapters = selectedAdapters.filter((adapter) => adapter.features?.workflow_control === "operator");
+  const entitlementAdapters = selectedAdapters.filter((adapter) => adapter.features?.persistent_profiles === "requires_entitlement");
+  const selectedTarget = targets.find((target) => target.id === value.target_id);
+  const selectedPolicy = policies.find((policy) => policy.id === value.proxy_policy_id);
+  const eligiblePolicies = policies.filter((policy) =>
+    (value.session_template_id && policy === selectedPolicy) || policyMatchesTarget(policy, selectedTarget),
+  );
   return (
     <div className="stack compact-stack">
-      <SessionTemplates token={token} value={value} onChange={onChange} />
+      {sessionTemplates && <SessionTemplates token={token} value={value} onChange={onChange} />}
       <fieldset className="batch-configuration" disabled={Boolean(value.session_template_id)}>
-      <div className="form-grid">
+      <div className="batch-basics">
         <Field label="Batch name">
           <input
             required
@@ -124,67 +454,26 @@ export function BatchFields({
             onChange={(e) => patch({ name: e.target.value })}
           />
         </Field>
-        <Field label="Evidence source">
-          <Select
-            value={value.mode}
-            onChange={(e) =>
-              patch({ mode: e.target.value as BatchInput["mode"] })
-            }
-          >
-            <option value="demo">Demonstration · simulated</option>
-            <option value="live">Live execution</option>
-          </Select>
-        </Field>
-        <Field label="Authorized site">
-          <Select
-            required
-            value={value.target_id}
-            onChange={(e) => patch({ target_id: e.target.value })}
-          >
-            <option value="" disabled>
-              Select a site
-            </option>
-            {targets.map((site) => (
-              <option key={site.id} value={site.id}>
-                {site.name} · v{site.version}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Workflow">
-          <Select
-            required
-            value={value.workflow_id}
-            onChange={(e) => patch({ workflow_id: e.target.value })}
-          >
-            <option value="" disabled>
-              Select a workflow
-            </option>
-            {workflows.map((workflow) => (
-              <option key={workflow.id} value={workflow.id}>
-                {workflow.name} · v{workflow.version}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <div className="form-grid">
+          <BatchCatalog<Target> token={token} path="/targets" title="Site"
+            value={value.target_id} initial={targets} description={(site) => site.origin}
+            onSelect={(target) => { if (target) { onTarget?.(target); patch({ target_id: target.id }); } }} />
+          <BatchCatalog<Workflow> token={token} path="/workflows" title="Workflow"
+            value={value.workflow_id} initial={workflows} description={(workflow) => `Version ${workflow.version}`}
+            onSelect={(workflow) => { if (workflow) { onWorkflow?.(workflow); patch({ workflow_id: workflow.id }); } }} />
+        </div>
       </div>
+      </fieldset>
+      {!value.session_template_id && !targets.length && (
+        <p className="notice">Add a site in the Sites registry to run a session.</p>
+      )}
+      {launchParameters}
+      <fieldset className="batch-configuration" disabled={Boolean(value.session_template_id)}>
       <fieldset className="choice-fieldset">
         <legend>Browser distribution</legend>
         <p>Sessions are assigned across the selected browser adapters.</p>
-        <div className="adapter-options">
-          {(adapters.length
-            ? adapters
-            : [
-                {
-                  id: "playwright" as const,
-                  reason: "Runtime inventory unavailable",
-                  name: "Playwright Chromium",
-                  available: false,
-                  status: "unknown",
-                  capabilities: [],
-                },
-              ]
-          ).map((adapter) => (
+        {adapters.length > 0 ? <div className="adapter-options">
+          {adapters.map((adapter) => (
             <label
               key={adapter.id}
               className={`adapter-option ${value.adapters.includes(adapter.id) ? "selected" : ""}`}
@@ -192,50 +481,43 @@ export function BatchFields({
               <input
                 type="checkbox"
                 checked={value.adapters.includes(adapter.id)}
-                onChange={(e) =>
-                  (() => {
-                    const adapters = e.target.checked
-                      ? [...value.adapters, adapter.id]
-                      : value.adapters.filter((id) => id !== adapter.id);
-                    const perGroup = value.phase === "confirmation" ? 300 : 30;
-                    patch({
-                      adapters,
-                      count:
-                        value.count === perGroup * value.adapters.length
-                          ? Math.max(1, adapters.length) * perGroup
-                          : value.count,
-                      ...(adapter.id === "manual_chrome" && e.target.checked
-                        ? {
-                            preparation: {
-                              ...value.preparation,
-                              mode: "manual",
-                            },
-                          }
-                        : {}),
-                    });
-                  })()
-                }
+                onChange={(event) => {
+                  const selected = event.target.checked
+                    ? [...value.adapters, adapter.id]
+                    : value.adapters.filter((id) => id !== adapter.id);
+                  const hasContext = adapters.some((candidate) => selected.includes(candidate.id)
+                    && candidate.features?.batch_preset_application === "context");
+                  const presets = value.batch_presets;
+                  patch({
+                    adapters: selected,
+                    count: Math.max(value.count, selected.length),
+                    batch_presets: presets && !hasContext && presets.locales?.length === 0
+                      ? { ...presets, locales: undefined } : presets,
+                  });
+                }}
               />
               <span className="adapter-icon">
                 <Monitor size={19} />
               </span>
               <span>
                 <strong>{adapter.name}</strong>
-                <small>
-                  {adapter.available
-                    ? "Runtime available"
-                    : adapter.reason || label(adapter.status)}
-                </small>
+                <small>{adapter.reason || label(adapter.status)}</small>
+                {adapter.available && <small>{adapter.worker_capacity == null
+                  ? "Worker capacity unavailable"
+                  : `${adapter.worker_capacity} worker ${adapter.worker_capacity === 1 ? "slot" : "slots"} reported`}</small>}
               </span>
               <Badge value={adapter.status} />
             </label>
           ))}
-        </div>
+        </div> : <p className="muted small-text">Browser inventory has not loaded.</p>}
       </fieldset>
+      {operatorAdapters.map((adapter) => (
+        <p key={adapter.id} className="muted small-text">{adapter.name} waits for operator handoff. The workflow checks the result after handoff.</p>
+      ))}
       <div className="form-grid">
         <Field
           label="Independent sessions"
-          hint="Total across selected browser groups. Maximum 2,000 sessions; up to 500 active."
+          hint="Total across selected browsers. Maximum 2,000 sessions; up to 500 active."
         >
           <input
             type="number"
@@ -259,14 +541,35 @@ export function BatchFields({
             onChange={(e) => patch({ concurrency: Number(e.target.value) })}
           />
         </Field>
-        <Field label="Profile persistence">
+      </div>
+      <details className="choice-fieldset">
+        <summary>Advanced</summary>
+        <BatchPresetFields value={value.batch_presets} seed={value.seed}
+          available={supportsBatchPresets(value, adapters)} contextAdapters={contextAdapters.map((adapter) => adapter.name)}
+          onChange={patch} />
+        <div className="form-grid">
+        {!value.batch_presets && <>
+          <UserAgentField value={value.user_agent} supported={supportsUserAgent} onChange={(user_agent) => patch({ user_agent })} />
+          <DevicePresetField value={value.device_preset} selected={value.adapters} adapters={adapters} onChange={(device_preset) => patch({ device_preset })} />
+        </>}
+        {!supportsUserAgent && value.user_agent != null && (
+          <p className="notice" role="status">Choose Browser default or select only browsers that support User-Agent overrides.</p>
+        )}
+        <Field label="Initial referrer" hint="Sent on the first navigation.">
+          <input
+            type="url"
+            maxLength={2048}
+            value={value.referrer ?? ""}
+            onChange={(e) => patch({ referrer: e.target.value || null })}
+          />
+        </Field>
+        <Field label="New profile persistence" hint={entitlementAdapters.length > 0
+          ? `Persistent profiles require a license entitlement for ${entitlementAdapters.map((adapter) => adapter.name).join(", ")}.`
+          : undefined}>
           <Select
             value={value.persistence}
             onChange={(e) =>
-              patch({
-                persistence: e.target.value as BatchInput["persistence"],
-                profile_ids: [],
-              })
+              patch({ persistence: e.target.value as BatchInput["persistence"] })
             }
           >
             <option value="fresh">Fresh · discard browser state</option>
@@ -275,217 +578,34 @@ export function BatchFields({
             </option>
           </Select>
         </Field>
-        <Field label="Proxy policy">
-          <Select
-            value={value.proxy_policy_id ?? ""}
-            onChange={(e) => patch({ proxy_policy_id: e.target.value || null })}
-          >
-            <option value="">Direct connectivity</option>
-            {policies.map((policy) => (
-              <option value={policy.id} key={policy.id}>
-                {policy.name} · v{policy.version}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <BatchCatalog<ProxyPolicy> token={token} path="/proxy-policies" title="Proxy policy"
+          initial={eligiblePolicies} optional emptyLabel="Direct connectivity" value={value.proxy_policy_id ?? ""}
+          disabled={(policy) => !policyMatchesTarget(policy, selectedTarget)}
+          label={(policy) => `${policy.name} · v${policy.version}`}
+          onSelect={(policy) => patch({ proxy_policy_id: policy?.id ?? null })} />
       </div>
-      {value.persistence === "persistent" && profiles.length > 0 && (
-        <Field
-          label="Reuse existing profiles (optional)"
-          hint="Select one available profile per requested session. Leave empty to create independent new profiles."
-        >
-          <select
-            multiple
-            className="profile-picker"
-            value={value.profile_ids ?? []}
-            onChange={(e) =>
-              patch({
-                profile_ids: Array.from(e.target.selectedOptions).map(
-                  (option) => option.value,
-                ),
-              })
-            }
-          >
-            {profiles.map((profile) => (
-              <option
-                key={profile.id}
-                value={profile.id}
-                disabled={profile.status !== "available"}
-              >
-                {profile.name} · {profile.adapter} · {profile.status}
-              </option>
-            ))}
-          </select>
-          {(value.profile_ids?.length ?? 0) > 0 && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => patch({ profile_ids: [] })}
-            >
-              Clear selection · create new profiles
-            </button>
-          )}
-        </Field>
-      )}
       <fieldset className="choice-fieldset">
-        <legend>Preparation</legend>
-        <Segments
-          label="Preparation mode"
-          value={value.preparation.mode}
-          onChange={(mode) =>
-            patch({ preparation: { ...value.preparation, mode } })
-          }
-          options={[
-            { value: "none", label: "None" },
-            { value: "automated", label: "Automated preparation" },
-            { value: "manual", label: "Manual control" },
-          ]}
-        />
-        {value.preparation.mode === "automated" && (
-          <>
-            <p>
-              Seeded, bounded activity on approved pages. Recorded as automated
-              activity and measured separately from the workflow.
-            </p>
-            <div className="form-grid">
-              <Field label="Minimum seconds">
-                <input
-                  type="number"
-                  min={1}
-                  max={300}
-                  required
-                  value={value.preparation.min_seconds}
-                  onChange={(e) =>
-                    patch({
-                      preparation: {
-                        ...value.preparation,
-                        min_seconds: Number(e.target.value),
-                      },
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Maximum seconds">
-                <input
-                  type="number"
-                  min={value.preparation.min_seconds}
-                  max={300}
-                  required
-                  value={value.preparation.max_seconds}
-                  onChange={(e) =>
-                    patch({
-                      preparation: {
-                        ...value.preparation,
-                        max_seconds: Number(e.target.value),
-                      },
-                    })
-                  }
-                />
-              </Field>
-              <Field
-                label="Approved paths"
-                hint="Comma-separated, site-relative paths."
-              >
-                <input
-                  required
-                  value={value.preparation.paths.join(", ")}
-                  onChange={(e) =>
-                    patch({
-                      preparation: {
-                        ...value.preparation,
-                        paths: e.target.value
-                          .split(",")
-                          .map((path) => path.trim()),
-                      },
-                    })
-                  }
-                />
-              </Field>
-            </div>
-          </>
-        )}
-        {(value.preparation.mode === "manual" || value.adapters.includes("manual_chrome")) && (
-          <div className="stack compact-stack">
-            <p className="muted small-text">
-              A person controls the browser before explicitly handing back to
-              automation. The activity is attributed to a human operator.
-            </p>
-            <Field
-              label="Manual idle timeout (seconds)"
-              hint="Defaults to 15 minutes. Session lifetime is configured below."
-            >
-              <input
-                required
-                type="number"
-                min={30}
-                max={3600}
-                value={value.preparation.idle_timeout_seconds}
-                onChange={(e) =>
-                  patch({
-                    preparation: {
-                      ...value.preparation,
-                      idle_timeout_seconds: Number(e.target.value),
-                    },
-                  })
-                }
-              />
-            </Field>
-            <Field
-              label="Manual session lifetime (seconds)"
-              hint="Defaults to one hour. Automation resumes only after explicit handoff; reaching this limit ends the session."
-            >
-              <input
-                required
-                type="number"
-                min={value.preparation.idle_timeout_seconds}
-                max={7200}
-                value={value.preparation.lifetime_seconds ?? 3600}
-                onChange={(e) =>
-                  patch({
-                    preparation: {
-                      ...value.preparation,
-                      lifetime_seconds: Number(e.target.value),
-                    },
-                  })
-                }
-              />
-            </Field>
-          </div>
-        )}
+        <legend>Reuse existing profiles</legend>
+        <p>Choose an existing profile for each session, or leave the selection empty to create new profiles. Reused profiles keep their saved persistence.</p>
+        <BatchCatalog<Profile> token={token} path="/profiles" title="Reusable profile"
+          initial={profiles} value="" optional emptyLabel="Choose a profile to add"
+          label={(profile) => `${profile.name} · ${label(profile.adapter)} · ${label(profile.persistence)} · ${profile.status}`}
+          disabled={(profile) => profile.status !== "available" || !value.adapters.includes(profile.adapter)
+            || (value.profile_ids ?? []).includes(profile.id) || (value.profile_ids?.length ?? 0) >= value.count}
+          onSelect={(profile) => {
+            if (!profile) return;
+            setProfileLabels({ ...profileLabels, [profile.id]: `${profile.name} · ${label(profile.persistence)}` });
+            patch({ profile_ids: [...(value.profile_ids ?? []), profile.id] });
+          }} />
+        {!!value.profile_ids?.length && <ul>{value.profile_ids.map((id) => <li key={id}>
+          {profileLabels[id] ?? profiles.find((profile) => profile.id === id)?.name ?? id}{" "}
+          <button type="button" className="text-button"
+            onClick={() => patch({ profile_ids: value.profile_ids?.filter((profile) => profile !== id) })}>Remove profile</button>
+        </li>)}</ul>}
       </fieldset>
       <fieldset className="choice-fieldset">
-        <legend>Research declaration</legend>
+        <legend>Execution limits</legend>
         <div className="form-grid">
-          <Field label="Research phase">
-            <Select
-              value={value.phase ?? "pilot"}
-              onChange={(e) =>
-                patch({
-                  phase: e.target.value as "pilot" | "confirmation",
-                  count:
-                    (e.target.value === "confirmation" ? 300 : 30) *
-                    value.adapters.length,
-                })
-              }
-            >
-              <option value="pilot">Pilot · 30 per browser group</option>
-              <option value="confirmation">
-                Confirmation · 300 per browser group
-              </option>
-            </Select>
-          </Field>
-          <Field label="Reliability threshold (%)">
-            <input
-              type="number"
-              min={1}
-              max={100}
-              step={0.1}
-              value={(value.reliability_target ?? 0.95) * 100}
-              onChange={(e) =>
-                patch({ reliability_target: Number(e.target.value) / 100 })
-              }
-            />
-          </Field>
           <Field label="Maximum duration per session (seconds)">
             <input
               type="number"
@@ -503,36 +623,12 @@ export function BatchFields({
           <Field label="Transport budget per session (MiB)" hint="Measured browser payload and vendor control traffic. This is an estimate, not the provider billing total.">
             <input type="number" required min={0.0009765625} max={2048} step="any" value={(value.traffic_budget_bytes ?? 104857600) / 1048576} onChange={(event) => patch({ traffic_budget_bytes: Math.round(Number(event.target.value) * 1048576) })} />
           </Field>
-          <Field label="Known cost per session (optional)">
-            <input
-              type="number"
-              min={0}
-              step="0.0001"
-              placeholder="Unknown"
-              value={value.cost_per_session ?? ""}
-              onChange={(e) =>
-                patch({
-                  cost_per_session:
-                    e.target.value === "" ? null : Number(e.target.value),
-                })
-              }
-            />
-          </Field>
         </div>
-        <Field label="Declared hypothesis (optional)">
-          <textarea
-            rows={2}
-            maxLength={2000}
-            value={value.hypothesis ?? ""}
-            onChange={(e) => patch({ hypothesis: e.target.value })}
-            placeholder="What comparison is this experiment designed to answer?"
-          />
-        </Field>
       </fieldset>
       <div className="form-grid">
-        <Field label="Artifact capture">
+        <Field label="Screenshot and console capture">
           <Select
-            value={value.artifact_policy ?? "none"}
+            value={value.artifact_policy ?? (value.session_template_id ? "none" : "all")}
             onChange={(e) =>
               patch({
                 artifact_policy: e.target
@@ -540,12 +636,12 @@ export function BatchFields({
               })
             }
           >
-            <option value="none">No artifacts</option>
+            <option value="none">Off</option>
             <option value="on_failure">Capture on failure</option>
             <option value="all">Capture all sessions</option>
           </Select>
         </Field>
-        <Field label="Artifact retention (days)">
+        <Field label="Artifact retention (days)" hint="Applies to session recordings and retained diagnostic artifacts.">
           <input
             type="number"
             required
@@ -557,198 +653,153 @@ export function BatchFields({
             }
           />
         </Field>
-        <Field
-          label="Cost currency (optional)"
-          hint="Three-letter currency code. Missing cost inputs remain unknown."
-        >
-          <input
-            maxLength={3}
-            pattern="[A-Z]{3}"
-            placeholder="USD"
-            value={value.cost_currency ?? ""}
-            onChange={(e) =>
-              patch({ cost_currency: e.target.value.toUpperCase() || null })
-            }
-          />
-        </Field>
       </div>
-      <Field
-        label="Random seed"
-        hint="Saved with the batch to reproduce adapter order and automated preparation."
-      >
+      <label className="checkbox-line">
         <input
-          className="short-input"
-          type="number"
-          min={0}
-          required
-          value={value.seed}
-          onChange={(e) => patch({ seed: Number(e.target.value) })}
+          type="checkbox"
+          checked={value.capture_javascript ?? !value.session_template_id}
+          onChange={(event) => patch({ capture_javascript: event.target.checked })}
         />
-      </Field>
+        Capture JavaScript assets and execution coverage
+      </label>
+      </details>
       </fieldset>
     </div>
   );
 }
+export function batchBrowserSettingsValid(value: BatchInput, adapters: Adapter[]): boolean {
+  if (value.batch_presets) {
+    return supportsBatchPresets(value, adapters) && value.batch_presets.presets.length > 0
+      && (value.batch_presets.locales?.length ?? 1) > 0
+      && (value.seed == null || (Number.isInteger(value.seed) && value.seed >= 0 && value.seed <= 2147483647));
+  }
+  return value.adapters.length > 0
+    && validUserAgent(value.user_agent)
+    && (value.user_agent == null || allAdaptersSupport(value.adapters, adapters, "user_agent_override"))
+    && (value.device_preset == null || allAdaptersSupport(value.adapters, adapters, "responsive_viewport"));
+}
+
 export function BatchWizard({
-  token,
-  targets,
-  workflows,
-  close,
-  onCreated,
+  token, targets, workflows, preview, close, onCreated,
 }: {
-  token: string;
-  targets: Target[];
-  workflows: Workflow[];
-  close: () => void;
-  onCreated: () => void;
+  token: string; targets: Target[]; workflows: Workflow[]; preview?: Workflow | null;
+  close: () => void; onCreated: () => void;
 }) {
   const query = useQueryClient();
-  const [value, setValue] = useState(() => defaultBatch(targets, workflows));
-  const [stage, setStage] = useState(0);
+  const [value, setValue] = useState(() => defaultBatch(targets, workflows, preview));
+  const [extraTarget, setExtraTarget] = useState<Target>();
+  const [extraWorkflow, setExtraWorkflow] = useState<Workflow>();
+  const [submitted, setSubmitted] = useState<{ input: BatchInput; draft: string }>();
+  const [stale, setStale] = useState(false);
+  const selectedTarget = targets.find((item) => item.id === value.target_id) ?? (extraTarget?.id === value.target_id ? extraTarget : undefined);
+  const selectedWorkflow = workflows.find((item) => item.id === value.workflow_id) ?? (extraWorkflow?.id === value.workflow_id ? extraWorkflow : undefined);
+  const steps = selectedWorkflow?.steps ?? [];
+  const parameterValues = value.fixture_params ?? {};
+  const { overrides, error: parameterError } = validateWorkflowUrlOverrides(steps, parameterValues);
   const adapters = useQuery({
     queryKey: platformKey(token, "adapters"),
     queryFn: () => api<Adapter[]>("/adapters", token),
   });
   const policies = useQuery({
     queryKey: platformKey(token, "proxy-policies"),
-    queryFn: () =>
-      api<PageResult<ProxyPolicy>>("/proxy-policies?limit=100", token),
+    queryFn: () => api<PageResult<ProxyPolicy>>("/proxy-policies?limit=30", token),
   });
   const profiles = useQuery({
     queryKey: platformKey(token, "profile-options"),
-    queryFn: () => api<PageResult<Profile>>("/profiles?limit=500", token),
+    queryFn: () => api<PageResult<Profile>>("/profiles?limit=30", token),
   });
+  const input = {
+    ...value, fixture_params: Object.keys(overrides).length ? overrides : undefined,
+    expected_workflow_version: selectedWorkflow?.version,
+  };
+  const draft = JSON.stringify(input);
+  const valid = !parameterError && Boolean(selectedTarget && selectedWorkflow)
+    && batchBrowserSettingsValid(value, adapters.data ?? []) && value.count >= 1
+    && value.concurrency >= 1 && value.concurrency <= value.count
+    && (!value.profile_ids?.length || value.profile_ids.length === value.count);
+  const readiness = useBatchPreflight(token, input, valid);
   const create = useMutation({
-    mutationFn: () =>
-      api<Batch>("/batches", token, { method: "POST", body: value }),
+    mutationFn: (requestBody: BatchInput) => api<Batch>("/batches", token, { method: "POST", body: requestBody }),
     onSuccess: () => {
       void query.invalidateQueries({ queryKey: ["platform", token] });
       onCreated();
       close();
     },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status < 500) {
+        setSubmitted(undefined);
+        if (error.status === 409) {
+          setStale(true);
+          void query.invalidateQueries({ queryKey: ["workflows", token] });
+          void query.invalidateQueries({ queryKey: ["targets", token] });
+          void readiness.refetch();
+        }
+      }
+    },
   });
-  const valid =
-    value.adapters.length > 0 &&
-    value.count >= 1 &&
-    value.concurrency >= 1 &&
-    value.concurrency <= value.count &&
-    (!value.profile_ids?.length || value.profile_ids.length === value.count) &&
-    (!value.adapters.includes("manual_chrome") ||
-      value.preparation.mode === "manual");
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!valid) return;
-    if (stage === 0) setStage(1);
-    else create.mutate();
+  function change(next: BatchInput) {
+    if (next.workflow_id !== value.workflow_id) {
+      next = {
+        ...next, fixture_params: undefined, workflow_inputs: undefined,
+      };
+    }
+    setValue(next);
   }
-  return (
-    <Modal
-      title="Create session batch"
-      detail="Independent browser sessions. One repeatable workflow."
-      close={close}
-      wide
-    >
-      <form onSubmit={submit}>
-        <div className="wizard-steps">
-          <span className={stage === 0 ? "current" : ""}>
-            <b>1</b> Configure
-          </span>
-          <ChevronRight size={16} />
-          <span className={stage === 1 ? "current" : ""}>
-            <b>2</b> Review & launch
-          </span>
-        </div>
-        <div className="modal-body">
-          {stage === 0 ? (
-            <BatchFields
-              token={token}
-              value={value}
-              onChange={setValue}
-              targets={targets}
-              workflows={workflows}
-              adapters={adapters.data ?? []}
-              policies={policies.data?.items ?? []}
-              profiles={profiles.data?.items ?? []}
-            />
-          ) : (
-            <div className="stack">
-              <div className="review-banner">
-                <Layers3 size={28} />
-                <div>
-                  <h3>{value.count} independent sessions</h3>
-                  <p>
-                    Up to {value.concurrency} running together, subject to
-                    admission capacity.
-                  </p>
-                </div>
-                <Badge value={value.mode} />
-              </div>
-              <DetailGrid
-                items={[
-                  ["Site", targets.find((t) => t.id === value.target_id)?.name],
-                  [
-                    "Workflow",
-                    workflows.find((w) => w.id === value.workflow_id)?.name,
-                  ],
-                  ["Browsers", value.adapters.join(", ")],
-                  ["Profile", label(value.persistence)],
-                  ["Preparation", label(value.preparation.mode)],
-                  ["Random seed", value.seed],
-                  ["HTTP request budget", value.request_budget ?? 1000],
-                  ["Transport budget", `${(value.traffic_budget_bytes ?? 104857600) / 1048576} MiB per session`],
-                  ["Session template", value.session_template_id ? `${value.session_template_id.slice(0, 12)} · v${value.session_template_version}` : "Custom configuration"],
-                ]}
-              />
-              {value.mode === "demo" ? (
-                <div className="notice">
-                  Demonstration outcomes are simulated and cannot qualify a live
-                  recommendation.
-                </div>
-              ) : (
-                <div className="notice">
-                  Live execution uses the saved target and workflow versions.
-                  Instrumented Clean results require successful server
-                  verification.
-                </div>
-              )}
-              <div className="notice">
-                <ShieldCheck size={18} /> Persistent profiles have one writer.
-                Failed or uncertain saves remain quarantined until reconciled.
-              </div>
-            </div>
-          )}
-          <ErrorNotice
-            error={create.error || adapters.error || policies.error}
-          />
-        </div>
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="button secondary"
-            onClick={stage === 0 ? close : () => setStage(0)}
-          >
-            {stage === 0 ? "Cancel" : "Back"}
-          </button>
-          <button
-            className="button primary"
-            disabled={
-              !valid ||
-              create.isPending ||
-              !value.target_id ||
-              !value.workflow_id
-            }
-          >
-            {create.isPending
-              ? "Creating…"
-              : stage === 0
-                ? "Review batch"
-                : "Create batch"}
-            {stage === 0 ? <ArrowRight size={16} /> : <Play size={16} />}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!valid || !readiness.current || !readiness.data || readiness.error || stale || submitted) return;
+    const payload = { ...input, expected_dependencies: readiness.data.expected_dependencies };
+    setSubmitted({ input: payload, draft });
+    create.mutate(payload);
+  }
+  return <Modal title={preview === undefined ? "Create session batch" : "Preview workflow"}
+    detail={preview === undefined ? "Choose a site and workflow, then set how many sessions to run." : "Run this workflow once on the selected site."} close={close} wide>
+    <form onSubmit={submit}>
+      <div className="modal-body stack">
+        <BatchFields token={token} targets={extraTarget ? [...targets, ...(!targets.some((item) => item.id === extraTarget.id) ? [extraTarget] : [])] : targets}
+          workflows={extraWorkflow ? [...workflows, ...(!workflows.some((item) => item.id === extraWorkflow.id) ? [extraWorkflow] : [])] : workflows}
+          value={value} onChange={change} onTarget={setExtraTarget} onWorkflow={setExtraWorkflow}
+          adapters={adapters.data ?? []} policies={policies.data?.items ?? []} profiles={profiles.data?.items ?? []}
+          launchParameters={<>
+            <WorkflowValuesFields workflow={selectedWorkflow}
+              value={value.workflow_inputs ?? {}} onChange={(workflow_inputs) => change({ ...value, workflow_inputs })} />
+            {workflowUrlParameterNames(steps).length > 0 && <WorkflowUrlParameters steps={steps}
+              value={parameterValues} origin={selectedTarget?.origin}
+              onChange={(fixture_params) => change({ ...value, fixture_params })} />}
+            <ErrorNotice error={parameterError} />
+          </>} />
+        <fieldset className="choice-fieldset">
+          <legend>Launch readiness</legend>
+          <p>{value.count} {value.count === 1 ? "session" : "sessions"} · {value.concurrency} maximum concurrent</p>
+          {readiness.current && readiness.isFetching && <p role="status">Checking configuration…</p>}
+          {readiness.current && <ErrorNotice error={readiness.error} />}
+          {readiness.current && readiness.data && !readiness.error && <>
+            <p>Site v{readiness.data.dependencies.target_version} · Workflow v{readiness.data.dependencies.workflow_version}</p>
+            <BatchReadinessNotices notices={readiness.data.notices} />
+          </>}
+          {stale && <button className="button secondary" type="button" onClick={() => { setStale(false); void readiness.refetch(); }}>Refresh launch readiness</button>}
+        </fieldset>
+        {submitted && create.error && <>
+          <p className="notice">The application did not receive a launch confirmation. Retry the same request to recover its receipt.</p>
+          <div className="button-row">
+            <button type="button" className="button secondary" disabled={create.isPending} onClick={() => create.mutate(submitted.input)}>Retry original launch</button>
+            {draft !== submitted.draft && <button type="button" className="button secondary" onClick={() => {
+              setSubmitted(undefined);
+              setValue({ ...value, idempotency_key: crypto.randomUUID() });
+              create.reset();
+            }}>Use revised settings</button>}
+          </div>
+        </>}
+        <ErrorNotice error={create.error} />
+      </div>
+      <div className="modal-footer">
+        <button type="button" className="button secondary" onClick={close}>Cancel</button>
+        <button type="submit" className="button primary" disabled={!valid || !readiness.current || !readiness.data || Boolean(readiness.error) || stale || !!submitted}>
+          {create.isPending ? "Creating…" : "Create batch"}
+        </button>
+      </div>
+    </form>
+  </Modal>;
 }
 
 function SessionViewer({
@@ -777,7 +828,7 @@ function SessionViewer({
     },
   });
   const frame = useQuery({
-    queryKey: platformKey(token, "frame", session.id),
+    queryKey: platformKey(token, "frame", session.id, session.epoch),
     queryFn: async () => {
       const response = await request(`/sessions/${session.id}/frame`, token);
       const blob = await response.blob();
@@ -788,9 +839,9 @@ function SessionViewer({
         reader.readAsDataURL(blob);
       });
     },
-    enabled: sessionActive(session.status),
     refetchInterval: owned ? 1000 : 5000,
     retry: false,
+    gcTime: 0,
   });
   return (
     <section className="viewer">
@@ -838,7 +889,7 @@ function SessionViewer({
         ) : (
           <Empty
             title="Waiting for a browser frame"
-            detail="The viewer becomes available when the session enters manual preparation."
+            detail="The viewer becomes available when the session is ready for operator handoff."
           />
         )}
       </div>
@@ -908,16 +959,63 @@ function SessionViewer({
 function SessionDetail({
   token,
   session,
+  onPlayRecording,
   close,
 }: {
   token: string;
   session: BrowserSession;
+  onPlayRecording: (id: string) => void;
   close: () => void;
 }) {
   const query = useQueryClient();
+  const preset = session.batch_preset;
+  const viewportChecks = viewportConformance(session);
+  const currentViewport = !preset || viewportChecks !== undefined
+    || (session.attempt_number > 0 && session.metadata.environment_epoch === session.epoch);
+  const device = currentViewport ? devicePresetLabel(session.metadata.device_preset) : undefined;
+  const deviceMode = currentViewport ? deviceModeLabel(session.metadata.device_mode) : undefined;
+  const deviceViewport = currentViewport ? session.metadata.viewport as { width?: number; height?: number } | undefined : undefined;
+  const viewportSize = typeof deviceViewport?.width === "number" && typeof deviceViewport.height === "number"
+    ? `${deviceViewport.width} × ${deviceViewport.height}`
+    : undefined;
+  const browserEngine = [session.metadata.browser_engine, session.metadata.browser_version]
+    .filter((entry): entry is string => typeof entry === "string")
+    .join(" · ");
   const requestUsage = session.metadata.request_usage as { total: number; budget: number; by_phase: Record<string, number>; exhausted: boolean } | undefined;
   const transportUsage = session.metadata.transport_usage as { total_bytes: number; budget_consumed_bytes: number; limit_bytes: number; budget_exhausted: boolean } | undefined;
+  const javascriptCapture = session.metadata.javascript_capture;
+  const browserDiagnostic = session.metadata.browser_diagnostic as Record<string, unknown> | undefined;
+  const isDiagnostic = browserDiagnostic?.attempt === session.attempt_number
+    && browserDiagnostic.epoch === session.epoch;
+  const javascriptCaptureStatus =
+    typeof javascriptCapture === "object" &&
+    javascriptCapture !== null &&
+    "attempt_number" in javascriptCapture &&
+    javascriptCapture.attempt_number === session.attempt_number &&
+    "status" in javascriptCapture &&
+    typeof javascriptCapture.status === "string"
+      ? javascriptCapture.status
+      : undefined;
   const [viewer, setViewer] = useState(false);
+  const canOpenViewer = session.status === "awaiting_operator";
+  const active = sessionActive(session.status);
+  const adscoreMeasurements = Array.isArray(session.metadata.adscore_requests)
+    ? (session.metadata.adscore_requests as AdScoreMeasurementRequest[]).filter((row) => row.method === "POST")
+    : [];
+  const adscoreReferrerPolicies = Array.isArray(session.metadata.adscore_referrer_policies)
+    ? session.metadata.adscore_referrer_policies as AdScoreReferrerPolicy[]
+    : [];
+  const adscoreInitiators = Array.isArray(session.metadata.adscore_request_initiators)
+    ? session.metadata.adscore_request_initiators as AdScoreRequestInitiator[]
+    : [];
+  const visibleWarning = session.metadata.visible_assertion_warning as { step?: number; codes?: unknown[] } | undefined;
+  const visibleWarningCodes = Array.isArray(visibleWarning?.codes)
+    ? visibleWarning.codes.filter((code) => code === "ADSCORE_SCRIPT_RULE" || code === "OFFER_TARGETING_MISMATCH")
+    : [];
+  const adscoreRequestFailures = Array.isArray(session.metadata.adscore_request_failures)
+    ? session.metadata.adscore_request_failures as AdScoreRequestFailure[]
+    : [];
+  const omittedAdScoreFailures = session.metadata.adscore_request_failures_omitted;
   const stop = useMutation({
     mutationFn: () =>
       api(`/sessions/${session.id}/commands`, token, {
@@ -930,11 +1028,10 @@ function SessionDetail({
       }),
   });
   const events = useQuery({
-    queryKey: platformKey(token, "session-events", session.id),
+    queryKey: platformKey(token, "session-events", session.id, session.attempt_number, session.finished_at),
     queryFn: () =>
       api<
         PageResult<{
-          id: string;
           sequence: number;
           kind: string;
           created_at: string;
@@ -944,7 +1041,7 @@ function SessionDetail({
     refetchInterval: sessionActive(session.status) ? 5000 : false,
   });
   const artifacts = useQuery({
-    queryKey: platformKey(token, "artifacts", session.id),
+    queryKey: platformKey(token, "artifacts", session.id, session.attempt_number, session.finished_at),
     queryFn: () =>
       api<
         Array<{
@@ -1000,11 +1097,26 @@ function SessionDetail({
         <div className="actions">
           <Badge value={session.status} />
           <Badge value={session.mode} />
+          <DiagnosticBundleExport key={session.id} token={token} sessionId={session.id} />
         </div>
         <DetailGrid
           items={[
+            ["Workflow", sessionWorkflowLabel(session)],
             ["Browser", session.adapter],
-            ["Profile", label(session.persistence)],
+            ["Browser engine", browserEngine || "Unrecorded"],
+            ["Device", [device, deviceMode, viewportSize].filter(Boolean).join(" · ") || "Unrecorded"],
+            ["Profile", typeof session.metadata.profile_launch_state === "string" && session.metadata.profile_launch_state !== session.persistence
+              ? `${label(session.persistence)} · ${label(session.metadata.profile_launch_state)}` : label(session.persistence)],
+            [
+              "Observed IP",
+              session.observed_ip ? <span className="mono session-ip-value">{session.observed_ip}</span>
+                : isDiagnostic ? "Not retained" : "Unavailable",
+            ],
+            [
+              "Proxy Check IP",
+              session.proxy_check_ip ? <span className="mono session-ip-value">{session.proxy_check_ip}</span>
+                : isDiagnostic ? "Not retained" : "Unavailable",
+            ],
             [
               "Operational outcome",
               session.outcome ? label(session.outcome) : "Pending",
@@ -1016,6 +1128,10 @@ function SessionDetail({
                 : "Unrecorded",
             ],
             ["Duration", ms(session.elapsed_ms)],
+            ...(session.queue_reason ? [["Queue", queueReason(session.queue_reason)] as [string, string | null]] : []),
+            ...(session.next_attempt_at ? [["Next retry", dateTime(session.next_attempt_at)] as [string, string]] : []),
+            ...(typeof session.metadata.completion_status === "string"
+              ? [["Completion check", label(session.metadata.completion_status)] as [string, string]] : []),
             ["Ground truth", label(session.ground_truth ?? "unrecorded")],
             ["Created", dateTime(session.created_at)],
             [
@@ -1024,7 +1140,45 @@ function SessionDetail({
             ],
           ]}
         />
+        {preset && <section>
+          <h3>Batch preset assignment</h3>
+          <DetailGrid items={[
+            ["Preset", `${preset.id} · catalog v${preset.catalog_version}`],
+            ["Assigned settings", preset.application === "viewport_only" ? "Viewport only" : "Viewport, DPR, locale, and timezone"],
+            ["Browser device class", label(preset.device_class)],
+            ["Viewport", `${label(preset.viewport_class)} · ${preset.viewport.width} × ${preset.viewport.height}`],
+            ["Device pixel ratio", preset.device_pixel_ratio ?? "Adapter default"],
+            ["Expected locale and timezone", preset.locale && preset.timezone ? `${preset.locale} · ${preset.timezone}` : "Adapter defaults"],
+            ["Batch distribution", label(preset.mode)],
+            ["Batch seed", preset.seed],
+          ]} />
+        </section>}
+        {preset && <section>
+          <h3>Viewport conformance</h3>
+          <p>{viewportChecks
+            ? `${viewportChecks.matched} of ${viewportChecks.checks} viewport checks matched · Attempt ${session.attempt_number}`
+            : active ? "Awaiting viewport checks" : "No viewport checks recorded for this attempt"}</p>
+        </section>}
+        {!isDiagnostic && <p className="muted small-text">{proxyCheckIPHint}</p>}
         {session.error && <ErrorNotice error={session.error} />}
+        <DecodoPreflight report={session.metadata.proxy_preflight} attempt={session.attempt_number} />
+        {session.metadata.environment_epoch === session.epoch && (
+          <LifecycleTimeline value={session.metadata.lifecycle_timeline} />
+        )}
+        {isDiagnostic && <BrowserDiagnostic data={browserDiagnostic} attempt={session.attempt_number} />}
+        {session.metadata.environment_epoch === session.epoch && (
+          <MainOriginFailures counts={session.metadata.main_origin_subresource_failures} />
+        )}
+        {!!session.metadata.step_failure && <WorkflowFailure failure={session.metadata.step_failure} />}
+        {session.metadata.environment_epoch === session.epoch && (
+          <NavigationConnects value={session.metadata.navigation_connects} />
+        )}
+        {typeof visibleWarning?.step === "number" && visibleWarningCodes.length > 0 && (
+          <DetailGrid items={[[
+            `Visible warning at step ${visibleWarning.step}`,
+            <span key="warning-codes" className="mono">{visibleWarningCodes.join(", ")}</span>,
+          ]]} />
+        )}
         {(requestUsage || transportUsage) && <section>
           <h3>Execution budgets</h3>
           <DetailGrid items={[
@@ -1035,27 +1189,38 @@ function SessionDetail({
           ]} />
           <p className="muted small-text">HTTP requests include preparation and workflow, separately from network tunnels. Transport includes encrypted browser payload; the budget also includes vendor control traffic. Provider billing may include additional overhead.</p>
         </section>}
-        <div className="actions">
-          <button
-            className="button secondary"
-            onClick={() => setViewer(!viewer)}
-          >
-            <Monitor size={16} />
-            {viewer ? "Hide viewer" : "Open viewer"}
-          </button>
-          {sessionActive(session.status) && (
-            <button
-              className="button danger"
-              disabled={stop.isPending}
-              onClick={() => stop.mutate()}
-            >
-              <Square size={14} />
-              Stop session
-            </button>
-          )}
-        </div>
+        {(canOpenViewer || active) && (
+          <div className="actions">
+            {canOpenViewer && (
+              <button
+                className="button secondary"
+                onClick={() => setViewer(!viewer)}
+              >
+                <Monitor size={16} />
+                {viewer ? "Hide viewer" : "Open viewer"}
+              </button>
+            )}
+            {active && (
+              <button
+                className="button danger"
+                disabled={stop.isPending}
+                onClick={() => stop.mutate()}
+              >
+                <Square size={14} />
+                Stop session
+              </button>
+            )}
+          </div>
+        )}
+        {!canOpenViewer && active && session.adapter === "manual_chrome" && (
+          <p className="muted small-text">
+            The live viewer opens when the session is ready for operator handoff.
+          </p>
+        )}
         <ErrorNotice error={stop.error} />
-        {viewer && <SessionViewer token={token} session={session} />}
+        {canOpenViewer && viewer && (
+          <SessionViewer key={session.epoch} token={token} session={session} />
+        )}
         <section>
           <h3>Provider observations</h3>
           <p className="muted small-text">
@@ -1086,7 +1251,7 @@ function SessionDetail({
                         "Acceptance decision",
                         item.accepted ? "Accepted" : "Not accepted",
                       ],
-                      ["Evidence source", label(item.source)],
+                      ["Observation source", label(item.source)],
                       [
                         "Provider version",
                         item.provider_version ?? "Unrecorded",
@@ -1102,8 +1267,114 @@ function SessionDetail({
             </p>
           )}
         </section>
+        {!active && adscoreMeasurements.length > 0 && (
+          <section>
+            <h3>AdScore measurement requests</h3>
+            <div className="artifact-list">
+              {adscoreMeasurements.map((request, index) => (
+                <div key={`${request.url}-${index}`}>
+                  <div>
+                    <strong>{request.status === undefined ? request.error ?? "No HTTP response" : `HTTP ${request.status}`}</strong>
+                    <small className="mono">{request.method} {request.url}</small>
+                    <small>
+                      Browser referrer origin{" "}
+                      <span className="mono">
+                        {request.referrer_origin === null ? "None sent" : request.referrer_origin ?? "Not captured"}
+                      </span>
+                    </small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {!active && adscoreReferrerPolicies.length > 0 && (
+          <section>
+            <h3>AdScore referrer policies</h3>
+            <div className="artifact-list">
+              {adscoreReferrerPolicies.map((policy, index) => (
+                <div key={`${policy.url}-${index}`}>
+                  <div>
+                    <small className="mono">POST {policy.url}</small>
+                    <small>Browser request policy {policy.request_policy ?? "Not captured"}</small>
+                    <small>
+                      Page response policy {policy.document_policy === null ? "No recognized header" : policy.document_policy ?? "Not captured"}
+                    </small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {!active && adscoreInitiators.length > 0 && (
+          <section>
+            <h3>AdScore request initiators</h3>
+            <div className="artifact-list">
+              {adscoreInitiators.map((entry, index) => (
+                <div key={`${entry.url}-${index}`}>
+                  <div>
+                    <small className="mono">POST {entry.url}{entry.status === undefined ? "" : ` · HTTP ${entry.status}`}</small>
+                    <small>
+                      Initiator {entry.initiator_type ? label(entry.initiator_type) : "Not captured"}
+                      {entry.resource_type && ` · ${label(entry.resource_type)}`}
+                      {entry.context && ` · ${label(entry.context)}`}
+                    </small>
+                    {entry.initiator_origin && <small>Initiator origin {entry.initiator_origin}</small>}
+                    {entry.document_origin && <small>Document origin {entry.document_origin}</small>}
+                    <small>Referer in initial browser headers {headerPresence(entry.initial_referrer_present)}</small>
+                    {entry.redirected ? (
+                      <small>Browser dispatch and network headers could not be matched across redirects.</small>
+                    ) : (
+                      <>
+                        <small>Referer before forwarding {headerPresence(entry.paused_referrer_present)}</small>
+                        <small>Referer in network headers {headerPresence(entry.network_referrer_present)}</small>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {!active && adscoreRequestFailures.length > 0 && (
+          <section>
+            <h3>AdScore request failures</h3>
+            <div className="artifact-list">
+              {adscoreRequestFailures.map((failure, index) => (
+                <div key={`${failure.url}-${failure.kind}-${index}`}>
+                  <div>
+                    <strong>{adscoreRequestFailureLabels[failure.kind]}</strong>
+                    <small className="mono">{failure.method} {failure.url}</small>
+                    <small>
+                      {[
+                        failure.status ? `HTTP ${failure.status}` : failure.error,
+                        failure.resource_type && label(failure.resource_type),
+                        failure.phase === "workflow" && failure.step > 0
+                          ? `Step ${failure.step}`
+                          : label(failure.phase),
+                      ].filter(Boolean).join(" · ")}
+                    </small>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {typeof omittedAdScoreFailures === "number" && omittedAdScoreFailures > 0 && (
+              <p className="muted small-text">Additional failures exceeded the capture limit.</p>
+            )}
+          </section>
+        )}
+        <section>
+          <h3>Session recording</h3>
+          <RecordingAction session={session} onPlay={onPlayRecording} />
+        </section>
         <section>
           <h3>Retained artifacts</h3>
+          {javascriptCaptureStatus && (
+            <div className="actions">
+              <span>JavaScript capture</span>
+              <Badge value={javascriptCaptureStatus} />
+            </div>
+          )}
           <ErrorNotice error={artifacts.error || download.error} />
           {artifacts.data?.length ? (
             <div className="artifact-list">
@@ -1132,8 +1403,7 @@ function SessionDetail({
             </div>
           ) : (
             <p className="muted small-text">
-              No retained artifacts. Capture follows the explicit batch artifact
-              policy.
+              No retained artifacts.
             </p>
           )}
         </section>
@@ -1145,30 +1415,23 @@ function SessionDetail({
             <ErrorNotice error={events.error} />
           ) : events.data?.items.length ? (
             <ol className="activity-timeline">
-              {events.data.items.map((event, index) => (
-                <li key={event.id ?? index}>
+              {events.data.items.map((event) => (
+                <li key={event.sequence}>
                   <span className="timeline-dot" />
                   <div>
-                    <strong>{label(event.kind)}</strong>
+                    <strong>{sessionEventTitle(event.kind, event.detail)}</strong>
                     <small>{dateTime(event.created_at)}</small>
-                    {event.detail && (
-                      <p>
-                        {Object.entries(event.detail)
-                          .filter(
-                            ([key]) =>
-                              ![
-                                "jpeg_base64",
-                                "signature",
-                                "token",
-                                "password",
-                              ].includes(key),
-                          )
-                          .slice(0, 3)
-                          .map(
-                            ([key, val]) => `${label(key)}: ${humanValue(val)}`,
-                          )
-                          .join(" · ")}
-                      </p>
+                    {event.detail && <p>{sessionEventDetail(event.kind, event.detail)}</p>}
+                    {event.kind === "proxy_preflight" && event.detail && event.detail.attempt !== session.attempt_number && (
+                      <details>
+                        <summary>Check results and timings</summary>
+                        <pre className="json-preview">{JSON.stringify({
+                          checks: event.detail.checks, timings_ms: event.detail.timings_ms,
+                        }, null, 2)}</pre>
+                      </details>
+                    )}
+                    {event.kind === "session_attempt_finished" && !!event.detail?.failure && (
+                      <WorkflowFailure failure={event.detail.failure} />
                     )}
                   </div>
                 </li>
@@ -1186,21 +1449,25 @@ function SessionList({
   sessions,
   selected,
   onOpen,
+  onPlayRecording,
   onSelect,
   selection,
 }: {
   sessions: BrowserSession[];
   selected: string | null;
   onOpen: (id: string) => void;
+  onPlayRecording: (id: string) => void;
   onSelect: (id: string) => void;
   selection: Set<string>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const getSessionKey = useCallback((index: number) => sessions[index].id, [sessions]);
   // The virtualizer remains outside React Compiler memoization; its scroll state is owned by TanStack.
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: sessions.length,
     getScrollElement: () => ref.current,
+    getItemKey: getSessionKey,
     estimateSize: () => 72,
     overscan: 6,
   });
@@ -1209,16 +1476,19 @@ function SessionList({
       <div className="session-table-head">
         <span />
         <span>Session / browser</span>
+        <span className="session-workflow-column">Workflow</span>
         <span>Status</span>
-        <span>Profile</span>
-        <span>Evidence</span>
-        <span>Duration</span>
-        <span />
+        <span className="session-profile">Profile</span>
+        <span className="session-evidence">Evidence</span>
+        <span className="session-ip-column" title="Address seen by the observation receiver">Observed IP</span>
+        <span className="session-ip-column" title={proxyCheckIPHint}>Proxy Check IP</span>
+        <span className="session-duration">Duration</span>
+        <span>Recording</span>
       </div>
       <div
         ref={ref}
         className="session-virtual"
-        style={{ height: Math.min(540, Math.max(150, sessions.length * 72)) }}
+        style={{ height: Math.min(540, Math.max(150, virtualizer.getTotalSize())) }}
         role="list"
         aria-label="Browser sessions"
       >
@@ -1227,13 +1497,17 @@ function SessionList({
         >
           {virtualizer.getVirtualItems().map((item) => {
             const session = sessions[item.index];
+            const workflow = sessionWorkflowLabel(session);
+            const observedIP = session.observed_ip ?? "Unavailable";
+            const proxyCheckIP = session.proxy_check_ip ?? "Unavailable";
             return (
               <div
                 key={session.id}
+                data-index={item.index}
+                ref={virtualizer.measureElement}
                 role="listitem"
                 className={`session-row ${selected === session.id ? "selected" : ""}`}
                 style={{
-                  height: item.size,
                   transform: `translateY(${item.start}px)`,
                 }}
               >
@@ -1250,22 +1524,46 @@ function SessionList({
                   <span className="session-avatar">
                     <Monitor size={17} />
                   </span>
-                  <span>
+                  <span className="session-identity-text">
                     <strong>{session.adapter}</strong>
                     <small className="mono">{session.id.slice(0, 12)}</small>
+                    <small className="session-workflow-inline session-workflow-value">
+                      Workflow {workflow}
+                    </small>
+                    <small className="session-ip-inline">
+                      Observed IP <span className="mono session-ip-value">{observedIP}</span>
+                    </small>
+                    <small className="session-ip-inline" title={proxyCheckIPHint}>
+                      Proxy Check IP <span className="mono session-ip-value">{proxyCheckIP}</span>
+                    </small>
                   </span>
                 </button>
-                <Badge value={session.status} />
-                <span className="muted">{label(session.persistence)}</span>
-                <Badge value={session.mode} />
-                <span className="mono muted">{ms(session.elapsed_ms)}</span>
-                <button
-                  className="icon-button"
-                  aria-label={`Open session ${session.id}`}
-                  onClick={() => onOpen(session.id)}
-                >
-                  <ChevronRight size={17} />
-                </button>
+                <span className="session-workflow-column session-workflow-value">
+                  <span className="sr-only">Workflow </span>
+                  {workflow}
+                </span>
+                <span title={queueReason(session.queue_reason) ?? undefined}><Badge value={session.status} /></span>
+                <span className="session-profile muted">{label(session.persistence)}</span>
+                <span className="session-evidence"><Badge value={session.mode} /></span>
+                <span className="session-ip-column session-ip-value mono muted" title={observedIP}>
+                  <span className="sr-only">Observed IP </span>
+                  <span>{observedIP}</span>
+                </span>
+                <span className="session-ip-column session-ip-value mono muted" title={proxyCheckIP}>
+                  <span className="sr-only">Proxy Check IP </span>
+                  <span>{proxyCheckIP}</span>
+                </span>
+                <span className="session-duration mono muted">{ms(session.elapsed_ms)}</span>
+                <div className="session-row-actions">
+                  <RecordingAction session={session} onPlay={onPlayRecording} compact />
+                  <button
+                    className="icon-button"
+                    aria-label={`Open session ${session.id}`}
+                    onClick={() => onOpen(session.id)}
+                  >
+                    <ChevronRight size={17} />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -1389,7 +1687,7 @@ function ProfileHistory({
             <legend>Recover confirmed stopped runtime</legend>
             <Field
               label="Runtime termination evidence"
-              hint="Record the observed process or Kubernetes Job termination and network-route cleanup. Minimum 20 characters."
+              hint="Describe how you confirmed the previous browser process stopped and its network route closed. Enter at least 20 characters."
             >
               <textarea
                 minLength={20}
@@ -1672,6 +1970,94 @@ function BatchCreationDetail({ token, batch, close }: { token: string; batch: Ba
   );
 }
 
+function BatchIPResult({ token, batchId }: { token: string; batchId: string }) {
+  const summary = useQuery({
+    queryKey: platformKey(token, "batch-ip-summary", batchId),
+    queryFn: ({ signal }) => api<BatchIPSummary>(`/batches/${batchId}/ip-summary`, token, { signal }),
+    refetchInterval: 5000,
+  });
+  const result = summary.data;
+  const status = result && batchIPStatuses[result.status];
+  return (
+    <div className="batch-ip-summary" role="status" aria-label="Batch IP uniqueness">
+      <strong>IP uniqueness</strong>
+      {result && status ? (
+        <>
+          <Badge value={status.label} tone={status.tone} />
+          <span className="muted">
+            {result.status === "duplicate" || result.status === "unique"
+              ? `${result.distinct_ips} distinct across ${result.observed_sessions} observed`
+              : `${result.observed_sessions} of ${result.expected_sessions} observed`}
+          </span>
+        </>
+      ) : (
+        <span className="muted">{summary.isPending ? "Checking…" : "Unavailable"}</span>
+      )}
+    </div>
+  );
+}
+
+function BatchProxyCheckIPResult({ token, batchId, onOpenSession }: {
+  token: string;
+  batchId: string;
+  onOpenSession: (id: string) => void;
+}) {
+  const summary = useQuery({
+    queryKey: platformKey(token, "batch-proxy-check-ip-summary", batchId),
+    queryFn: ({ signal }) => api<BatchProxyCheckIPSummary>(
+      `/batches/${batchId}/proxy-check-ip-summary`, token, { signal },
+    ),
+    refetchInterval: 5000,
+  });
+  const result = summary.data;
+  return (
+    <section className="batch-ip-summary batch-proxy-check-summary" aria-label="Proxy Check IP summary">
+      <div className="batch-proxy-check-overview">
+        <strong>Proxy Check IP summary</strong>
+        <div className="batch-proxy-check-counts muted" role="status">
+          {result ? (
+            <>
+              <span>{result.checked_sessions} of {result.expected_sessions} checked</span>
+              <span>{result.unique_sessions} unique {result.unique_sessions === 1 ? "session" : "sessions"}</span>
+              <span>{result.duplicate_sessions} duplicate sessions</span>
+              <span>{result.distinct_ips} distinct {result.distinct_ips === 1 ? "IP" : "IPs"}</span>
+            </>
+          ) : (
+            <span>{summary.isPending ? "Checking…" : "Unavailable"}</span>
+          )}
+        </div>
+      </div>
+      {result && result.duplicate_groups.length > 0 && (
+        <details className="batch-proxy-check-duplicates">
+          <summary>Show duplicate sessions</summary>
+          <ul className="batch-proxy-check-groups">
+            {result.duplicate_groups.map((group, index) => (
+              <li key={group.sessions[0]?.id}>
+                <span className="mono session-ip-value">{group.proxy_check_ip ?? `Shared IP ${index + 1}`}</span>
+                <ul className="batch-proxy-check-members">
+                  {group.sessions.map((session) => (
+                    <li key={session.id}>
+                      <button
+                        type="button"
+                        className="text-button"
+                        aria-label={`View session ${session.ordinal} (${session.id})`}
+                        title={session.id}
+                        onClick={() => onOpenSession(session.id)}
+                      >
+                        Session {session.ordinal}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
 export function Sessions({
   token,
   targets,
@@ -1693,6 +2079,7 @@ export function Sessions({
   const status = listing.filters.status ?? "";
   const setStatus = (value: string) => listing.setFilter("status", value);
   const [selected, setSelected] = useState<string | null>(null);
+  const [recordingSession, setRecordingSession] = useState<string | null>(null);
   const [selection, setSelection] = useState(new Set<string>());
   const query = useQueryClient();
   const sessions = useQuery({
@@ -1752,6 +2139,15 @@ export function Sessions({
     },
   });
   const active = (sessions.data?.items ?? []).find((s) => s.id === selected);
+
+  function openDuplicateSession(id: string) {
+    setSearch(id);
+    listing.setFilter("status", "");
+    listing.setFilter("mode", "");
+    listing.setFilter("adapter", "");
+    setSelected(id);
+  }
+
   return (
     <div className="stack">
       <div className="page-toolbar">
@@ -1822,15 +2218,24 @@ export function Sessions({
             </span>
           </div>
           {batchFilter && (
-            <div className="selection-bar">
-              <span>Batch {batchFilter.slice(0, 12)}</span>
-              <button
-                className="text-button"
-                onClick={() => setBatchFilter("")}
-              >
-                Show all sessions
-              </button>
-            </div>
+            <>
+              <div className="selection-bar">
+                <span>Batch {batchFilter.slice(0, 12)}</span>
+                <button
+                  className="text-button"
+                  onClick={() => setBatchFilter("")}
+                >
+                  Show all sessions
+                </button>
+              </div>
+              <BatchIPResult token={token} batchId={batchFilter} />
+              <BatchProxyCheckIPResult
+                key={batchFilter}
+                token={token}
+                batchId={batchFilter}
+                onOpenSession={openDuplicateSession}
+              />
+            </>
           )}
           {selection.size > 0 && (
             <div className="selection-bar">
@@ -1860,6 +2265,7 @@ export function Sessions({
                 sessions={sessions.data.items}
                 selected={selected}
                 onOpen={setSelected}
+                onPlayRecording={setRecordingSession}
                 selection={selection}
                 onSelect={(id) =>
                   setSelection((current) => {
@@ -1880,7 +2286,7 @@ export function Sessions({
           ) : (
             <Empty
               title="Your browser fleet starts here"
-              detail="Create a batch to run independent sessions on one workflow, with explicit profile, proxy, and preparation policies."
+              detail="Create a batch to run a saved workflow in independent browsers."
               action={
                 <button
                   className="button secondary"
@@ -2027,11 +2433,21 @@ export function Sessions({
       </div>
       {active && (
         <SessionDetail
+          key={active.id}
           token={token}
           session={active}
+          onPlayRecording={setRecordingSession}
           close={() => setSelected(null)}
         />
       )}{" "}
+      {recordingSession && (
+        <SessionRecordingPlayer
+          key={recordingSession}
+          token={token}
+          sessionId={recordingSession}
+          close={() => setRecordingSession(null)}
+        />
+      )}
       {creationDetail && batches.data?.items.find((batch) => batch.id === creationDetail) && (
         <BatchCreationDetail token={token} batch={batches.data.items.find((batch) => batch.id === creationDetail)!} close={() => setCreationDetail(null)} />
       )}

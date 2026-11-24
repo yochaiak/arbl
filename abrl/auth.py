@@ -9,32 +9,23 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from starlette.middleware.sessions import SessionMiddleware
 
-from abrl.access import CLOUD
 from abrl.config import OPERATOR_TOKEN, WEB_ORIGIN
 from abrl.db import Session
 from abrl.platform_models import Membership, Project, User
 
 
 def configure_auth(app):
-    secret = os.getenv("ABRL_SESSION_SECRET") or (OPERATOR_TOKEN if not CLOUD else None)
-    if not secret:
-        if CLOUD:
-            raise RuntimeError("Cloud requires ABRL_SESSION_SECRET")
-        secret = secrets.token_hex(32)
+    secret = os.getenv("ABRL_SESSION_SECRET") or OPERATOR_TOKEN or secrets.token_hex(32)
     app.add_middleware(
         SessionMiddleware,
         secret_key=secret,
-        https_only=CLOUD,
+        https_only=WEB_ORIGIN.startswith("https://"),
         same_site="lax",
         max_age=3600,
         session_cookie="abrl_session",
     )
     issuer = os.getenv("ABRL_OIDC_ISSUER", "").rstrip("/")
     client_id = os.getenv("ABRL_OIDC_CLIENT_ID")
-    if CLOUD and (
-        not issuer.startswith("https://") or not client_id or not os.getenv("ABRL_OIDC_CLIENT_SECRET")
-    ):
-        raise RuntimeError("Cloud requires a configured HTTPS OIDC issuer, client ID and secret")
     oauth = OAuth()
     if issuer and client_id:
         oauth.register(
@@ -69,7 +60,7 @@ def configure_auth(app):
             # Explicitly configured bootstrap subject only; never promote the first arbitrary login.
             if subject == os.getenv("ABRL_OIDC_OWNER_SUBJECT"):
                 if not db.get(Project, "default"):
-                    db.add(Project(id="default", name="Research", concurrency=20))
+                    db.add(Project(id="default", name="Default project", concurrency=20))
                     db.flush()
                 if not db.get(Membership, ("default", user.id)):
                     db.add(Membership(project_id="default", user_id=user.id, role="owner"))

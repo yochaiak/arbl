@@ -1,20 +1,17 @@
-# Instrumented observation integration
+# Instrumented session observations
 
-AdScore verification is server-only. Deploy the official Node verifier with a compatible response key and zone; V5 is the new-configuration default. Do not expose its token, response key, or service endpoint to browser code. The deployment runs it as a loopback sidecar so the Python verifier connector keeps its internal-origin restriction.
+An instrumented session can attach an AdScore observation from an authorized site's backend. ABRL verifies the provider signature against trusted request metadata. Configure the internal verifier with a compatible response key and zone. Keep the verifier endpoint, token, and response key on the server. [Verifier setup](../apps/verifier/README.md).
 
-## Controlled fixture
+## Site setup
 
-For a cloud fixture set `ABRL_CONTROLLED_ORIGIN` to its exact deployed HTTPS origin in the shared API/runner runtime configuration. That deployment-owned origin receives the `/lab/research` integration path and does not need a separately hosted ownership marker. Other sites use the authenticated site connector described below.
+1. Register the authorized HTTPS site as **Instrumented**. Register the navigation and resource origins required by your integration. New instrumented sites include `https://c.adsco.re` for the provider script.
+2. Set a strong `ABRL_CORRELATION_SECRET` on the API and session runners. Set a separate `ABRL_OBSERVATION_CONNECTOR_TOKEN` of at least 32 characters on the API and on the site's backend. Use the connector token for server-to-server authentication.
+3. Retain the runner's `abrl_context` parameter from the first navigation with the site's workflow request. This signed, short-lived context identifies the live session, attempt, and ownership epoch. Reserve the parameter name for the runner.
+4. Send the provider signature to the site's backend through your integration. Use the actual public request IP and User-Agent from trusted server metadata. If a reverse proxy supplies client metadata, configure the site server to trust only the designated proxy and have the proxy replace incoming forwarded headers.
 
-An instrumented session carries a signed short-lived context containing its session ID, attempt ID and ownership epoch. `/lab/research` binds this context to the configured target origin, sets an HTTP-only context cookie, loads the documented AdScore callback, and posts the signature back to the site server. The server obtains the client IP and User-Agent from trusted request metadata and calls the verifier. A positive client callback with failed verification is recorded as failed verification, never Clean.
+## Submit an observation
 
-After recording an observation, the browser continues to the declared workflow. `/lab/form` checks the active research context and the pinned acceptance gate. `verified_clean` requires verified raw code0; `observe_only` records the verdict while allowing benchmark execution. The default is `verified_clean`. Ordinary browser-only fixtures remain usable without fabricated provider observations.
-
-The local loopback environment cannot supply the public client metadata required by AdScore. Use an owned HTTPS integration and correctly trusted proxy metadata; never disable IP or User-Agent checks. The Hetzner ingress configuration forwards the load balancer PROXY protocol only from its fixed private address.
-
-## External authorized site
-
-The runner appends `abrl_context` to the first navigation URL. The owned site's backend receives it and must retain it with the benchmark request. After the documented AdScore JavaScript callback obtains a signature, forward it to your own backend. Only that trusted backend calls:
+The trusted site backend sends the context, signature, and metadata through the authenticated connector.
 
 ```http
 POST /api/v1/integration-observations
@@ -32,14 +29,14 @@ Content-Type: application/json
 }
 ```
 
-The public browser must never possess the connector token or supply trusted IP metadata. Do not forward untrusted `X-Forwarded-For` chains. On the controlled callback, client-supplied metadata is ignored in favor of the actual trusted request. A changed idempotency payload conflicts; another observation cannot replace a trial's negative verdict. Wrong/expired attempts and browser-only or simulated sessions cannot ingest live provider evidence.
+The connector records one immutable observation per active instrumented attempt. An identical idempotent request returns the existing observation. A changed payload using the same key conflicts. Project members can read observations from `GET /api/v1/sessions/{session_id}/observations`.
 
-Store and use the returned `accepted` decision to gate your benchmark action. Keep the workflow success assertion independent from verification: both are required for the primary instrumented research outcome. Register exact additional resource origins needed by your integration. New instrumented targets include `https://c.adsco.re` for the documented script; other provider resources require explicit permission.
+Use the returned `accepted` decision to gate the site's workflow action. The default `verified_clean` gate accepts a verified raw code `0`, which is the provider's **Clean** verdict. `observe_only` accepts a recorded observation regardless of the verdict. ABRL records workflow completion and provider verification independently. A single Navigate step waits up to 40 seconds within the workflow time budget for the site to submit an observation. End a multi-step workflow with an explicit success assertion.
 
-## Readiness and evidence
+## Confirm readiness
 
-A configured key is insufficient to mark the integration ready. Complete the live verification smoke test described in `apps/verifier/README.md`. Store actual browser/version, public IP routing configuration, target revision and traceable observation IDs. The official definitions label0 Clean,3 Potentially unwanted,6 Proxy and9 Bot; preserve all raw codes, including unknown future codes. Clean is not a ground-truth claim about a human operator.
+Run an instrumented session against the authorized HTTPS site and check the session's observation. Successful live signature verification moves the configured verifier from `pending_smoke_test` to `ready`. The authenticated API reports verifier readiness at `/api/v1/status`.
 
-Automated connector tests cover successful/failed verification, negative and unknown verdicts, duplicate observations, request metadata binding and gate behavior. They are distinct from live AdScore verification, which requires your compatible zone.
+Session details include a bounded browser network trace for instrumented workflows. It distinguishes browser responses and failures from policy blocks and links consecutive requests in an HTTP redirect. The trace records sanitized origins and paths and omits credentials, query strings, fragments, headers, and bodies.
 
-Sources: [official AdScore verdict definitions](https://github.com/Adscore/pyadscore/blob/master/src/pyadscore/definitions/judge.py), [official Node SDK](https://github.com/Adscore/nodejs-common), [JavaScript API](https://docs.adscore.com/js-api/).
+Automated connector tests use fixture responses. Live verification uses the site's compatible zone and trusted public request metadata. Preserve raw provider codes, including future codes unknown to the application. [Official AdScore verdict definitions](https://github.com/Adscore/pyadscore/blob/master/src/pyadscore/definitions/judge.py), [official Node SDK](https://github.com/Adscore/nodejs-common), [JavaScript API](https://docs.adscore.com/js-api/).

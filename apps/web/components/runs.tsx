@@ -1,91 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createColumnHelper, flexRender, getCoreRowModel, getPaginationRowModel, useReactTable } from "@tanstack/react-table";
-import { Archive, ArrowDownToLine, ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, CircleStop, Clock3, Gauge, Pause, Play, ScanLine, X } from "lucide-react";
+import { Archive, ArrowDownToLine, ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, CircleStop, Clock3, Gauge, Pause, Play, ScanLine } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api, dateTime, exportRun, isActive, label, ms, pct, streamRunEvents, type Report, type RunEvent, type Run, type RunInput, type Target, type Trial, type Workflow } from "@/lib/api";
-import { Badge, Empty, ErrorNotice, Field, Loading, SectionTitle, Select } from "./ui";
+import { api, dateTime, exportRun, isActive, label, ms, pct, streamRunEvents, type Report, type RunEvent, type Run, type Trial } from "@/lib/api";
+import { Badge, Empty, ErrorNotice, Loading, SectionTitle, Select } from "./ui";
 import { ModeBadge } from "./registry";
-
-export function NewRun({ token, targets, workflows, preview, close, onRun }: {
-  token: string;
-  targets: Target[];
-  workflows: Workflow[];
-  preview: Workflow | null;
-  close: () => void;
-  onRun: (run: Run) => void;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const [form, setForm] = useState<RunInput>({
-    target_id: targets[0]?.id ?? "",
-    workflow_id: preview?.id ?? workflows[0]?.id ?? "",
-    repetitions: preview ? 1 : 30,
-    seed: 42,
-    phase: "pilot",
-    mode: preview && targets[0]?.verified ? "live" : "demo",
-    reliability_target: 0.95,
-  });
-  const query = useQueryClient();
-  const target = targets.find((entry) => entry.id === form.target_id);
-  const create = useMutation({
-    mutationFn: () => api<Run>("/runs", token, { method: "POST", body: form }),
-    onSuccess: (run) => {
-      query.setQueryData<Run[]>(["runs", token], (items = []) => [run, ...items.filter((item) => item.id !== run.id)]);
-      void query.invalidateQueries({ queryKey: ["runs", token] });
-      onRun(run);
-    },
-  });
-
-  useEffect(() => { dialog.current?.showModal(); }, []);
-
-  function set<K extends keyof RunInput>(key: K, value: RunInput[K]) {
-    setForm((previous) => ({
-      ...previous,
-      [key]: value,
-      ...(key === "phase" && !preview ? { repetitions: value === "pilot" ? 30 : 300 } : {}),
-    }));
-  }
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    create.mutate();
-  }
-
-  const needsProof = form.mode === "live" && target?.verified === false;
-
-  return <dialog ref={dialog} className="dialog" aria-labelledby="run-dialog-title" onCancel={(event) => { event.preventDefault(); if (!create.isPending) close(); }}>
-    <form className="edit-form" onSubmit={submit}>
-      <div className="dialog-title">
-        <div><h2 id="run-dialog-title">{preview ? "Preview workflow" : "Browser-only run"}</h2><p>{preview ? "Execute one trial against the selected site." : "Choose the site, workflow, and sample size."}</p></div>
-        <button type="button" className="icon-button bare" aria-label="Close" onClick={close} disabled={create.isPending}><X size={20} /></button>
-      </div>
-      {(!targets.length || !workflows.length) && <div className="notice">Register a site and save a workflow, or load the starter suite from Overview.</div>}
-      <div className="notice">This preview measures observable workflow completion. Use session batches or research experiments for server-verified AdScore evidence.</div>
-      <div className="form-grid">
-        <Field label="Site"><Select required value={form.target_id} onChange={(event) => set("target_id", event.target.value)}>
-          {!targets.length && <option value="">No sites registered</option>}{targets.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
-        </Select></Field>
-        <Field label="Workflow"><Select required value={form.workflow_id} onChange={(event) => set("workflow_id", event.target.value)}>
-          {!workflows.length && <option value="">No workflows saved</option>}{workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
-        </Select></Field>
-        <Field label="Evidence source"><Select value={form.mode} onChange={(event) => set("mode", event.target.value as Run["mode"])}><option value="demo">Simulated demo</option><option value="live">Live browser execution</option></Select></Field>
-        {!preview && <Field label="Phase"><Select value={form.phase} onChange={(event) => set("phase", event.target.value as Run["phase"])}><option value="pilot">Pilot</option><option value="confirmation">Confirmation</option></Select></Field>}
-        {!preview && <Field label="Trials"><input type="number" min={1} max={300} required value={form.repetitions} onChange={(event) => set("repetitions", event.target.valueAsNumber)} /></Field>}
-        <Field label="Random seed"><input type="number" min={0} max={2147483647} required value={form.seed} onChange={(event) => set("seed", event.target.valueAsNumber)} /></Field>
-        {!preview && <Field label="Reliability target (%)"><input type="number" min={0.1} max={100} step={0.1} required value={Number((form.reliability_target * 100).toFixed(1))} onChange={(event) => set("reliability_target", event.target.valueAsNumber / 100)} /></Field>}
-      </div>
-      {form.mode === "demo" && <div className="notice">Demo trials use deterministic simulated outcomes.</div>}
-      {needsProof && <div role="alert" className="notice error">Verify this site in the registry before starting a live run.</div>}
-      <ErrorNotice error={create.error} />
-      <div className="form-footer">
-        <button type="button" className="button secondary" onClick={close} disabled={create.isPending}>Cancel</button>
-        <button className="button primary" disabled={!form.target_id || !form.workflow_id || needsProof || create.isPending}><Play size={16} />{create.isPending ? "Starting…" : preview ? "Run preview" : "Start run"}</button>
-      </div>
-    </form>
-  </dialog>;
-}
 
 export function RunRows({ runs, onOpen }: { runs: Run[]; onOpen: (id: string) => void }) {
   return <div className="table-scroll"><table>
@@ -112,10 +34,10 @@ export function RunHistory({ runs, onOpen, onCreate }: { runs: Run[]; onOpen: (i
     <SectionTitle title="Run history" detail={`${filtered.length} of ${runs.length} runs`} />
     <div className="filter-row">
       <input type="search" aria-label="Filter runs by name" placeholder="Search workflow or site…" value={search} onChange={(event) => setSearch(event.target.value)} />
-      <Select aria-label="Evidence source" value={mode} onChange={(event) => setMode(event.target.value)}><option value="all">All sources</option><option value="live">Live browser</option><option value="demo">Simulated</option></Select>
+      <Select aria-label="Execution mode" value={mode} onChange={(event) => setMode(event.target.value)}><option value="all">All sources</option><option value="live">Live browser</option><option value="demo">Simulated</option></Select>
       <Select aria-label="Run status" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option>{statuses.map((entry) => <option key={entry} value={entry}>{label(entry)}</option>)}</Select>
     </div>
-    {filtered.length ? <RunRows runs={filtered} onOpen={onOpen} /> : <Empty title={runs.length ? "No matching runs" : "No runs yet"} detail={runs.length ? "Change the filters to see other results." : "Start a run to capture trial outcomes and latency."} action={!runs.length && <button className="button primary" onClick={onCreate}><Play size={15} /> Workflow preview</button>} />}
+    {filtered.length ? <RunRows runs={filtered} onOpen={onOpen} /> : <Empty title={runs.length ? "No matching runs" : "No historical runs"} detail={runs.length ? "Change the filters to see other results." : "Start a workflow preview to see new results in Sessions."} action={!runs.length && <button className="button primary" onClick={onCreate}><Play size={15} /> Workflow preview</button>} />}
   </section>;
 }
 

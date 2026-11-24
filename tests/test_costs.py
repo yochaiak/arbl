@@ -62,6 +62,14 @@ def test_rate_or_currency_missing_never_invents_a_proxy_price(proxy):
     assert session_cost({"usage_attempts": rows}, {})["estimated_proxy_cost"] is None
 
 
+def test_proxy_usage_attributes_provider_from_leased_inventory():
+    (record,) = record_attempt_usage(
+        {}, usage(1_000), attempt_id="one", proxy_config={"provider": "decodo"}
+    )
+    assert record["provider"] == "decodo"
+    assert record["proxy_bytes"] == 1_000
+
+
 def test_direct_connection_zero_proxy_component_does_not_imply_free_workflow():
     rows = record_attempt_usage({}, usage(1_000), attempt_id="one", proxy_config=None)
     result = session_cost({"usage_attempts": rows}, {})

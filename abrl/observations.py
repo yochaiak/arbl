@@ -3,10 +3,7 @@
 import hashlib
 import hmac
 import ipaddress
-import json
 import os
-import re
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request
 from itsdangerous import BadSignature, URLSafeTimedSerializer
@@ -15,10 +12,10 @@ from sqlalchemy import select
 
 from abrl.config import OPERATOR_TOKEN
 from abrl.db import Session, now
-from abrl.lab import _bounded_body, _page, _request_metadata, verify_observation
 from abrl.platform_models import BrowserSession, ProviderObservation, SessionBatch
 from abrl.platform_service import ACTIVE, event
 from abrl.schemas import Input
+from abrl.verifier import verify_observation
 
 router = APIRouter()
 
@@ -38,7 +35,7 @@ def decode_context(token):
     try:
         return signer().loads(token, max_age=7200)
     except (BadSignature, ValueError):
-        raise HTTPException(401, "Expired or invalid research context")
+        raise HTTPException(401, "Expired or invalid session context")
 
 
 class ObservationInput(Input):
@@ -47,6 +44,17 @@ class ObservationInput(Input):
     idempotency_key: str = Field(min_length=8, max_length=100)
     client_ip: str = Field(max_length=64)
     user_agent: str = Field(min_length=1, max_length=1024)
+
+
+def _active_attempt(session, context):
+    return (
+        session is not None
+        and session.mode == "live"
+        and session.lease_token == context["attempt_id"]
+        and session.epoch == context["epoch"]
+        and session.status in ACTIVE
+        and bool(session.lease_until and session.lease_until > now())
+    )
 
 
 def observation_view(row):
@@ -72,6 +80,10 @@ async def ingest(data, *, source):
     request_hash = hashlib.sha256(data.model_dump_json().encode()).hexdigest()
     try:
         address = ipaddress.ip_address(data.client_ip)
+        if isinstance(address, ipaddress.IPv6Address):
+            if address.scope_id is not None:
+                raise ValueError
+            address = address.ipv4_mapped or address
         if not address.is_global or address.is_multicast:
             raise ValueError()
     except ValueError:
@@ -79,7 +91,7 @@ async def ingest(data, *, source):
     with Session() as db:
         session = db.get(BrowserSession, context["session_id"])
         if not session or session.mode != "live":
-            raise HTTPException(409, "Observations require a live research session")
+            raise HTTPException(409, "Observations require a live session")
         prior = db.scalar(
             select(ProviderObservation).where(
                 ProviderObservation.session_id == session.id,
@@ -90,13 +102,7 @@ async def ingest(data, *, source):
             if prior.request_hash and prior.request_hash != request_hash:
                 raise HTTPException(409, "Idempotency key belongs to different observation")
             return observation_view(prior)
-        if (
-            session.lease_token != context["attempt_id"]
-            or session.epoch != context["epoch"]
-            or session.status not in ACTIVE
-            or not session.lease_until
-            or session.lease_until <= now()
-        ):
+        if not _active_attempt(session, context):
             raise HTTPException(409, "Observation belongs to an inactive attempt")
         batch = db.get(SessionBatch, session.batch_id)
         if batch.config["target"]["mode"] != "instrumented":
@@ -108,7 +114,7 @@ async def ingest(data, *, source):
             signature=data.signature, ip_address=str(address), user_agent=data.user_agent, zone_id=zone
         )
         if data.signature
-        else {"verification_status": "unavailable", "verdict": None, "raw_code": None}
+        else {"verification_status": "unavailable", "verdict": None, "raw_code": None, "reason": "no_signature"}
     )
     with Session.begin() as db:
         session = db.scalar(
@@ -124,13 +130,7 @@ async def ingest(data, *, source):
             if prior.request_hash and prior.request_hash != request_hash:
                 raise HTTPException(409, "Idempotency key belongs to different observation")
             return observation_view(prior)
-        if (
-            session.lease_token != context["attempt_id"]
-            or session.epoch != context["epoch"]
-            or session.status not in ACTIVE
-            or not session.lease_until
-            or session.lease_until <= now()
-        ):
+        if not _active_attempt(session, context):
             raise HTTPException(409, "Attempt finished during verification")
         existing = db.scalar(
             select(ProviderObservation).where(ProviderObservation.attempt_id == context["attempt_id"])
@@ -150,6 +150,7 @@ async def ingest(data, *, source):
             source=source,
             provider_version=os.getenv("ABRL_ADSCORE_ALGORITHM", "v5_0101M"),
             request_hash=request_hash,
+            observed_ip=str(address),
         )
         db.add(row)
         db.flush()
@@ -190,85 +191,3 @@ def observations(session_id: str, request: Request):
                 .order_by(ProviderObservation.created_at)
             )
         ]
-
-
-@router.get("/lab/research")
-def research_page(request: Request, context: str, next: str = "/lab"):
-    identity = decode_context(context)
-    # Validate this request against the immutable authorized site, not a URL supplied by the browser.
-    with Session() as db:
-        session = db.get(BrowserSession, identity["session_id"])
-        if not session or session.lease_token != identity["attempt_id"]:
-            raise HTTPException(409, "Inactive research context")
-        target = db.get(SessionBatch, session.batch_id).config["target"]
-    if target["origin"] != str(request.base_url).rstrip("/"):
-        raise HTTPException(403, "Research origin mismatch")
-    if (
-        urlsplit(next).path
-        not in {"/lab", "/lab/form", "/lab/interaction", "/lab/next", "/lab/finish", "/lab/repeat"}
-        or next.startswith("//")
-        or "\\" in next
-        or urlsplit(next).netloc
-    ):
-        raise HTTPException(422, "Invalid controlled workflow path")
-    key = target.get("adscore_zone_key") or os.getenv("ABRL_ADSCORE_ZONE_KEY", "")
-    if not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", key):
-        raise HTTPException(503, "Configure a compatible AdScore test zone")
-    payload = json.dumps(
-        {"context": context, "idempotency_key": hashlib.sha256(context.encode()).hexdigest()}
-    )
-    script = f"""let sent=false;
-async function save(signature){{if(sent)return;sent=true;try{{const response=await fetch('/lab/research',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{...{payload},signature}})}});if(!response.ok)throw Error();location.href={json.dumps(next).replace(chr(60), chr(92) + "u003c")};}}catch{{document.getElementById('research-status').textContent='Server verification unavailable';}}}}
-const engine=document.createElement('script');engine.src='https://c.adsco.re/';engine.onload=()=>{{try{{AdscoreInit({json.dumps(key)},{{callback(result){{save(result?.error===0&&typeof result.signature==='string'?result.signature:null)}}}})}}catch{{save(null)}}}};engine.onerror=()=>save(null);document.head.appendChild(engine);setTimeout(()=>save(null),30000);"""
-    response = _page(
-        "Instrumented research",
-        '<p id="research-status" role="status">Awaiting verified provider evidence</p>',
-        script=script,
-    )
-    response.set_cookie(
-        "abrl_research",
-        context,
-        httponly=True,
-        secure=request.url.scheme == "https",
-        samesite="strict",
-        path="/lab",
-        max_age=7200,
-    )
-    return response
-
-
-@router.post("/lab/research")
-async def research_callback(request: Request):
-    expected = str(request.base_url).rstrip("/")
-    if request.headers.get("origin") != expected:
-        raise HTTPException(403, "Origin mismatch")
-    ip, ua = _request_metadata(request)
-    try:
-        payload = json.loads(await _bounded_body(request))
-    except ValueError:
-        raise HTTPException(422, "Invalid research callback")
-    if payload.get("context") != request.cookies.get("abrl_research"):
-        raise HTTPException(403, "Research context mismatch")
-    data = ObservationInput.model_validate({**payload, "client_ip": ip, "user_agent": ua})
-    return await ingest(data, source="controlled_site")
-
-
-def acceptance(request):
-    token = request.cookies.get("abrl_research")
-    if not token:
-        return True
-    context = decode_context(token)
-    with Session() as db:
-        session = db.get(BrowserSession, context["session_id"])
-        if (
-            not session
-            or session.lease_token != context["attempt_id"]
-            or session.status not in ACTIVE
-            or not session.lease_until
-            or session.lease_until <= now()
-        ):
-            return False
-        observation = db.scalar(
-            select(ProviderObservation).where(ProviderObservation.attempt_id == context["attempt_id"])
-        )
-        return bool(observation and observation.accepted)

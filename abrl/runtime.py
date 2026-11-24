@@ -19,6 +19,8 @@ from abrl.browser import BrowserResult, execute_workflow
 from abrl.config import CLICKHOUSE_PASSWORD, CLICKHOUSE_URL, DISPATCH_SECONDS, LEASE_SECONDS, REDIS_URL
 from abrl.db import Attempt, Event, Run, Session, Target, Trial, WorkerHeartbeat, new_id, now, record
 from abrl.platform_models import BrowserProfile, BrowserSession, Project, SessionBatch
+from abrl.session_metadata import redact_session_metadata, redact_session_text
+from abrl.target_authorization import target_is_live_ready
 from abrl.telemetry import configure_logging
 
 configure_logging()
@@ -28,24 +30,7 @@ trials_finished = Counter("abrl_trial_outcomes_total", "Logical trial outcomes",
 trial_time = Histogram("abrl_trial_duration_seconds", "Observed workflow duration")
 WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"
 
-if os.getenv("ABRL_REDIS_SENTINELS"):
-    from redis.sentinel import Sentinel
-
-    sentinels = [
-        (host.rsplit(":", 1)[0], int(host.rsplit(":", 1)[1]))
-        for host in os.environ["ABRL_REDIS_SENTINELS"].split(",")
-    ]
-    sentinel = Sentinel(
-        sentinels,
-        password=os.getenv("ABRL_REDIS_PASSWORD"),
-        socket_timeout=3,
-        sentinel_kwargs={"password": os.getenv("ABRL_REDIS_PASSWORD")},
-    )
-    broker = RedisBroker(
-        client=sentinel.master_for(os.getenv("ABRL_REDIS_MASTER", "abrl-master")), namespace="abrl"
-    )
-else:
-    broker = RedisBroker(url=REDIS_URL, namespace="abrl")
+broker = RedisBroker(url=REDIS_URL, namespace="abrl")
 broker.add_middleware(AsyncIO())
 dramatiq.set_broker(broker)
 
@@ -157,11 +142,7 @@ def claim(trial_id: str) -> Work | None:
                 return None
         if run.mode == "live":
             target = session.scalar(select(Target).where(Target.id == run.target_id).with_for_update())
-            if (
-                not target
-                or target.version != run.target_version
-                or target.verified_version != target.version
-            ):
+            if not target_is_live_ready(target, run.target_version, run.target):
                 trial.status, trial.outcome, trial.error = (
                     "finished",
                     "blocked",
@@ -197,11 +178,7 @@ def heartbeat(work: Work) -> bool:
             return True
         if work.mode == "live":
             target = session.get(Target, run.target_id)
-            if (
-                not target
-                or target.version != run.target_version
-                or target.verified_version != target.version
-            ):
+            if not target_is_live_ready(target, run.target_version, run.target):
                 return True
         touch_worker(session)
         trial.lease_until = relative_time(LEASE_SECONDS)
@@ -218,7 +195,7 @@ def finish(work: Work, result: BrowserResult, *, infrastructure_retry: bool = Fa
         outcome = "cancelled" if run.status == "cancelling" else result.outcome
         attempt.finished_at = now()
         attempt.outcome = outcome
-        attempt.error = result.error
+        attempt.error = redact_session_text(result.error)
         attempt.elapsed_ms = result.elapsed_ms
         attempt.started_action = result.started_action
         trial.lease_token = trial.lease_until = trial.dispatched_at = None
@@ -233,9 +210,9 @@ def finish(work: Work, result: BrowserResult, *, infrastructure_retry: bool = Fa
         else:
             trial.status = "cancelled" if outcome == "cancelled" else "finished"
             trial.outcome = outcome
-            trial.error = result.error
+            trial.error = attempt.error
             trial.elapsed_ms = result.elapsed_ms
-            trial.metadata_json = result.metadata
+            trial.metadata_json = redact_session_metadata(result.metadata)
             record(session, "trial_" + outcome, run_id=run.id, trial_id=trial.id)
             trials_finished.labels(work.mode, outcome).inc()
             if work.mode == "live":
@@ -280,13 +257,18 @@ async def run_trial(trial_id: str) -> None:
         )
     else:
         try:
+            steps = work.workflow["steps"]
+            post_navigation_wait_seconds = (
+                sum((step.get("post_navigation_wait_ms") or 0) for step in steps) / 1000
+            )
             result = await execute_workflow(
                 origin=work.target["origin"],
                 resource_origins=work.target["resource_origins"],
                 navigation_origins=work.target.get("navigation_origins", []),
-                steps=work.workflow["steps"],
+                steps=steps,
                 cancel=cancelled,
-                timeout_seconds=60,
+                timeout_seconds=60 + post_navigation_wait_seconds,
+                workflow=work.workflow,
             )
             retry = result.outcome == "failed" and not result.started_action
         except Exception:

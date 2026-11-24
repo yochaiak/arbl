@@ -37,7 +37,7 @@ def test_profile_search_is_literal_paginated_and_project_scoped(db):
 
 
 def test_session_and_batch_filters_apply_before_pagination(db):
-    batch = test_platform.create(db, count=3)
+    batch = test_platform.create(db, count=3, mode="demo")
     with db.begin() as connection:
         rows = list(connection.scalars(select(BrowserSession).where(BrowserSession.batch_id == batch.id)))
         rows[0].status = "failed"

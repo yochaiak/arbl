@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Select } from "./ui";
 
@@ -48,6 +48,8 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const detailId = `${titleId}-details`;
   useEffect(() => {
     ref.current?.showModal();
     const node = ref.current;
@@ -57,6 +59,8 @@ export function Modal({
     <dialog
       ref={ref}
       className={`platform-modal ${wide ? "wide" : ""}`}
+      aria-labelledby={titleId}
+      aria-describedby={detail ? detailId : undefined}
       onCancel={close}
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
@@ -64,8 +68,8 @@ export function Modal({
     >
       <div className="modal-header">
         <div>
-          <h2>{title}</h2>
-          {detail && <p>{detail}</p>}
+          <h2 id={titleId}>{title}</h2>
+          {detail && <p id={detailId}>{detail}</p>}
         </div>
         <button
           className="icon-button"

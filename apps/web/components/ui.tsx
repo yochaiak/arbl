@@ -16,7 +16,7 @@ export function Brand() {
         <Activity size={22} strokeWidth={2.5} />
       </span>
       <span>
-        ABRL<small>Browser research lab</small>
+        ABRL<small>Browser workflow workspace</small>
       </span>
     </div>
   );

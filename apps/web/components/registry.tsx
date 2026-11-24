@@ -1,37 +1,24 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  Copy,
-  Download,
   Globe2,
   Plus,
   Route,
-  ShieldCheck,
-  Trash2,
-  Upload,
 } from "lucide-react";
 import {
-  actions,
-  actionLabels,
   api,
   arrayPage,
   label,
-  saveFile,
-  workflowSchema,
-  type Step,
   type Target,
   type TargetInput,
   type Workflow,
-  type WorkflowInput,
 } from "@/lib/api";
 import { Badge, Empty, ErrorNotice, Field, Loading, SectionTitle, Select } from "./ui";
 import { ListControls, Pagination, useListState } from "./platform-ui";
 import { platformKey } from "@/lib/platform";
+import { WorkflowEditor } from "./workflow-builder";
 
 const blankTarget: TargetInput = {
   name: "",
@@ -41,7 +28,7 @@ const blankTarget: TargetInput = {
   mode: "browser_only",
   rate_limit: 30,
   session_policy: "fresh",
-  authorized: false,
+  authorized: true,
   concurrency: 1,
   acceptance_gate: "verified_clean",
 };
@@ -65,7 +52,7 @@ function TargetEditor({
           mode: initial.mode,
           rate_limit: initial.rate_limit,
           session_policy: initial.session_policy,
-          authorized: initial.authorized,
+          authorized: true,
           concurrency: initial.concurrency ?? 1,
           acceptance_gate: initial.acceptance_gate ?? "verified_clean",
         }
@@ -219,7 +206,7 @@ function TargetEditor({
       </div>
       <Field
         label="Additional navigation origins"
-        hint="Optional HTTPS origins, one per line. Each must pass ownership verification. The primary navigation origin is already included."
+        hint="Enter optional HTTPS origins, one per line. The primary origin is already included. Saving makes these origins available to future runs."
       >
         <textarea
           rows={3}
@@ -232,7 +219,7 @@ function TargetEditor({
       </Field>
       <Field
         label="Resource origins"
-        hint="Read-only scripts, styles, and other subresources, one HTTPS origin per line. These do not allow navigation or form submission."
+        hint="Pages load public HTTPS CDN assets automatically. Add origins for other cross-origin read-only requests, one HTTPS origin per line."
       >
         <textarea
           rows={3}
@@ -242,17 +229,6 @@ function TargetEditor({
           onChange={(event) => setResourceText(event.target.value)}
         />
       </Field>
-      <label className="check">
-        <input
-          required
-          type="checkbox"
-          checked={values.authorized}
-          onChange={(event) => set("authorized", event.target.checked)}
-        />
-        <span>
-          I control this site or have permission to run these workflows.
-        </span>
-      </label>
       <ErrorNotice error={save.error} />
       <div className="form-footer">
         <button className="button primary" disabled={save.isPending}>
@@ -264,69 +240,6 @@ function TargetEditor({
         </button>
       </div>
     </form>
-  );
-}
-
-function SiteProof({ site, token }: { site: Target; token: string }) {
-  const query = useQueryClient();
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState<Error | null>(null);
-  const verify = useMutation({
-    mutationFn: () =>
-      api(`/targets/${site.id}/verify`, token, { method: "POST" }),
-    onSuccess: () => {
-      void query.invalidateQueries({ queryKey: ["targets"] });
-    },
-  });
-  if (!site.proof_token || site.verified) return null;
-
-  return (
-    <section className="panel proof">
-      <SectionTitle
-        title="Verify site ownership"
-        detail="Serve this marker as plain text at the path below on every permitted navigation origin, then verify the site."
-      />
-      <code className="proof-value">
-        {site.proof_path || "/.well-known/abrl-target.txt"}
-      </code>
-      <ul className="small-text">
-        {[site.origin, ...(site.navigation_origins ?? [])].map((origin) => (
-          <li className="mono" key={origin}>{origin}</li>
-        ))}
-      </ul>
-      <div className="proof-row">
-        <code className="proof-value">{site.proof_token}</code>
-        <button
-          type="button"
-          className="button secondary"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(site.proof_token!);
-              setCopied(true);
-              setCopyError(null);
-            } catch (error) {
-              setCopyError(
-                error instanceof Error
-                  ? error
-                  : new Error("Could not copy the marker."),
-              );
-            }
-          }}
-        >
-          {copied ? <Check size={16} /> : <Copy size={16} />}
-          {copied ? "Copied" : "Copy"}
-        </button>
-      </div>
-      <ErrorNotice error={verify.error || copyError} />
-      <button
-        className="button secondary"
-        disabled={verify.isPending}
-        onClick={() => verify.mutate()}
-      >
-        <ShieldCheck size={17} />
-        {verify.isPending ? "Verifying…" : "Verify site"}
-      </button>
-    </section>
   );
 }
 
@@ -404,385 +317,8 @@ export function SiteRegistry({
           initial={editing}
           onSaved={(site) => { setCachedTarget(site); choose(site.id); void entries.refetch(); }}
         />
-        {editing && <SiteProof key={editing.id} token={token} site={editing} />}
       </div>
     </div>
-  );
-}
-
-type DraftStep = Step & { key: number };
-const defaultSteps: Step[] = [
-  { action: "navigate", url: "/" },
-  { action: "assert_visible", selector: "h1" },
-];
-
-function StepEditor({
-  step,
-  index,
-  length,
-  onChange,
-  onMove,
-  onRemove,
-}: {
-  step: DraftStep;
-  index: number;
-  length: number;
-  onChange: (step: DraftStep) => void;
-  onMove: (delta: -1 | 1) => void;
-  onRemove: () => void;
-}) {
-  const inputValue = ["fill", "select", "assert_text"].includes(step.action);
-  return (
-    <fieldset className="step-card">
-      <div className="step-header">
-        <span className="step-index">{String(index + 1).padStart(2, "0")}</span>
-        <Select
-          aria-label={`Step ${index + 1} action`}
-          value={step.action}
-          onChange={(event) => {
-            const action = event.target.value as Step["action"];
-            onChange({
-              key: step.key,
-              action,
-              url: action === "navigate" ? "/" : undefined,
-              selector: action === "navigate" || action === "checkpoint" ? undefined : step.selector,
-              name: action === "checkpoint" ? `checkpoint-${index + 1}` : undefined,
-              timeout_ms: step.timeout_ms,
-            });
-          }}
-        >
-          {actions.map((action) => (
-            <option key={action} value={action}>
-              {actionLabels[action]}
-            </option>
-          ))}
-        </Select>
-        <div className="step-controls">
-          <button
-            type="button"
-            className="icon-button bare"
-            title="Move up"
-            aria-label={`Move step ${index + 1} up`}
-            disabled={index === 0}
-            onClick={() => onMove(-1)}
-          >
-            <ArrowUp size={16} />
-          </button>
-          <button
-            type="button"
-            className="icon-button bare"
-            title="Move down"
-            aria-label={`Move step ${index + 1} down`}
-            disabled={index === length - 1}
-            onClick={() => onMove(1)}
-          >
-            <ArrowDown size={16} />
-          </button>
-          <button
-            type="button"
-            className="icon-button bare danger"
-            title="Remove step"
-            aria-label={`Remove step ${index + 1}`}
-            onClick={onRemove}
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
-      <div className="form-grid">
-        {step.action === "navigate" ? (
-          <Field label="Navigation path or HTTPS URL" hint="Absolute HTTPS URLs must belong to the selected site's verified navigation origins.">
-            <input
-              required
-              value={step.url ?? ""}
-              className="mono"
-              placeholder="/example or https://checkout.example.com/confirm"
-              onChange={(event) =>
-                onChange({ ...step, url: event.target.value })
-              }
-            />
-          </Field>
-        ) : step.action === "checkpoint" ? (
-          <Field label="Checkpoint name" hint="Unique identifier, e.g. form-accepted.">
-            <input
-              required
-              maxLength={64}
-              value={step.name ?? ""}
-              onChange={(event) => onChange({ ...step, name: event.target.value })}
-            />
-          </Field>
-        ) : (
-          <Field label="Element selector">
-            <input
-              required
-              value={step.selector ?? ""}
-              className="mono"
-              placeholder="[data-testid='submit']"
-              onChange={(event) =>
-                onChange({ ...step, selector: event.target.value })
-              }
-            />
-          </Field>
-        )}
-        {step.action !== "checkpoint" && <Field label="Timeout in milliseconds">
-          <input
-            type="number"
-            min={100}
-            max={15000}
-            placeholder="5000"
-            value={step.timeout_ms ?? ""}
-            onChange={(event) =>
-              onChange({
-                ...step,
-                timeout_ms: event.target.value
-                  ? event.target.valueAsNumber
-                  : undefined,
-              })
-            }
-          />
-        </Field>}
-        {inputValue && (
-          <Field
-            label={step.action === "assert_text" ? "Expected text" : "Value"}
-          >
-            <input
-              value={step.value ?? ""}
-              disabled={Boolean(step.secret_ref)}
-              onChange={(event) =>
-                onChange({ ...step, value: event.target.value })
-              }
-            />
-          </Field>
-        )}
-        {step.action === "fill" && (
-          <Field label="Secret reference">
-            <input
-              value={step.secret_ref ?? ""}
-              className="mono"
-              placeholder="CHECKOUT_TEST_EMAIL"
-              onChange={(event) =>
-                onChange({
-                  ...step,
-                  value: event.target.value ? undefined : step.value,
-                  secret_ref: event.target.value || undefined,
-                })
-              }
-            />
-          </Field>
-        )}
-      </div>
-      {step.action === "assert_not_visible" && (
-        <p className="muted small-text">Fails if the matching element remains visible after the timeout. Use an error or rejection selector to declare a failure condition.</p>
-      )}
-      {step.action === "checkpoint" && (
-        <p className="muted small-text">Place directly after a successful assertion. This records a progress boundary; it does not reset action history, resume execution, or permit replay of an uncertain action.</p>
-      )}
-    </fieldset>
-  );
-}
-
-function WorkflowEditor({
-  token,
-  initial,
-  onSaved,
-  onPreview,
-}: {
-  token: string;
-  initial: Workflow | null;
-  onSaved: (workflow: Workflow) => void;
-  onPreview: (workflow: Workflow) => void;
-}) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [steps, setSteps] = useState<DraftStep[]>(() =>
-    (initial?.steps ?? defaultSteps).map((step, index) => ({
-      ...step,
-      key: index,
-    })),
-  );
-  const [importError, setImportError] = useState<Error | null>(null);
-  const nextKey = useRef(steps.length);
-  const input = useRef<HTMLInputElement>(null);
-  const query = useQueryClient();
-  const payload = (): WorkflowInput => ({
-    name,
-    steps: steps.map(({ key, ...step }) => {
-      void key;
-      return step;
-    }),
-  });
-  const save = useMutation({
-    mutationFn: (preview: boolean) => {
-      const data = workflowSchema.parse(payload());
-      return api<Workflow>(
-        initial ? `/workflows/${initial.id}` : "/workflows",
-        token,
-        {
-          method: initial ? "PUT" : "POST",
-          body: data,
-        },
-      ).then((workflow) => ({ workflow, preview }));
-    },
-    onSuccess: ({ workflow, preview }) => {
-      query.setQueryData<Workflow[]>(["workflows", token], (list = []) => [
-        ...list.filter((entry) => entry.id !== workflow.id),
-        workflow,
-      ]);
-      void query.invalidateQueries({ queryKey: ["workflows", token] });
-      onSaved(workflow);
-      if (preview) onPreview(workflow);
-    },
-  });
-
-  function move(index: number, delta: -1 | 1) {
-    setSteps((previous) => {
-      const next = [...previous];
-      [next[index], next[index + delta]] = [next[index + delta], next[index]];
-      return next;
-    });
-  }
-
-  async function importWorkflow(file: File) {
-    try {
-      if (file.size > 250_000)
-        throw new Error("Choose a workflow file smaller than 250 KB.");
-      const result = workflowSchema.parse(JSON.parse(await file.text()));
-      setName(result.name);
-      setSteps(
-        result.steps.map((step) => ({ ...step, key: nextKey.current++ })),
-      );
-      setImportError(null);
-    } catch (error) {
-      setImportError(
-        error instanceof Error
-          ? error
-          : new Error("The workflow JSON could not be read."),
-      );
-    }
-  }
-
-  return (
-    <form
-      className="panel edit-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        save.mutate(false);
-      }}
-    >
-      <SectionTitle
-        title={initial ? "Edit workflow" : "Build a workflow"}
-        detail="Define the actions and the checks that confirm success."
-      />
-      <div className="form-grid workflow-top">
-        <Field label="Workflow name">
-          <input
-            required
-            maxLength={100}
-            placeholder="Checkout confirmation"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </Field>
-        <div className="actions">
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => input.current?.click()}
-          >
-            <Upload size={16} /> Import
-          </button>
-          <input
-            className="sr-only"
-            tabIndex={-1}
-            aria-label="Import workflow JSON"
-            ref={input}
-            type="file"
-            accept=".json,application/json"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void importWorkflow(file);
-              event.target.value = "";
-            }}
-          />
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() =>
-              saveFile(
-                new Blob([JSON.stringify(payload(), null, 2)], {
-                  type: "application/json",
-                }),
-                "workflow.json",
-              )
-            }
-          >
-            <Download size={16} /> Export
-          </button>
-        </div>
-      </div>
-      <ErrorNotice error={importError} />
-      <div className="step-list">
-        {steps.map((step, index) => (
-          <StepEditor
-            key={step.key}
-            step={step}
-            index={index}
-            length={steps.length}
-            onChange={(next) =>
-              setSteps((previous) =>
-                previous.map((current) =>
-                  current.key === step.key ? next : current,
-                ),
-              )
-            }
-            onMove={(delta) => move(index, delta)}
-            onRemove={() =>
-              setSteps((previous) =>
-                previous.filter((current) => current.key !== step.key),
-              )
-            }
-          />
-        ))}
-        <button
-          type="button"
-          className="button add-step"
-          onClick={() => {
-            const key = nextKey.current++;
-            setSteps((previous) => [...previous, { key, action: "click" }]);
-          }}
-        >
-          <Plus size={16} /> Add step
-        </button>
-      </div>
-      <ErrorNotice
-        error={
-          save.error instanceof Error && save.error.name === "ZodError"
-            ? new Error(
-                workflowSchema.safeParse(payload()).error?.issues[0]?.message ??
-                  "Check the workflow steps.",
-              )
-            : save.error
-        }
-      />
-      <div className="form-footer">
-        <button
-          type="button"
-          className="button secondary"
-          disabled={save.isPending}
-          onClick={(event) => {
-            if (event.currentTarget.form?.reportValidity()) save.mutate(true);
-          }}
-        >
-          Save and preview
-        </button>
-        <button className="button primary" disabled={save.isPending}>
-          {save.isPending
-            ? "Saving…"
-            : initial
-              ? "Save new version"
-              : "Save workflow"}
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -801,6 +337,11 @@ export function WorkflowRegistry({
   const entries = useQuery({ queryKey: platformKey(token, "workflow-registry", listing.params), queryFn: () => arrayPage<Workflow>(`/workflows?${listing.params}`, token) });
   const records = entries.data?.items ?? [];
   const [cachedWorkflow, setCachedWorkflow] = useState<Workflow | null>(null);
+  const editing = cachedWorkflow?.id === selected
+    ? cachedWorkflow
+    : records.find((workflow) => workflow.id === selected) ??
+      workflows.find((workflow) => workflow.id === selected) ??
+      null;
   function choose(id: string | null) {
     setSelected(id);
     setRevision((value) => value + 1);
@@ -828,7 +369,7 @@ export function WorkflowRegistry({
         {entries.isPending ? <Loading /> : records.length === 0 ? (
           <Empty
             title="No workflows saved"
-            detail="Create a workflow or load the starter suite from Overview."
+            detail="Create a workflow to run on a registered site."
           />
         ) : (
           <div className="record-list">
@@ -844,7 +385,7 @@ export function WorkflowRegistry({
                 </span>
                 <span className="record-text">
                   <strong>{workflow.name}</strong>
-                  <span>{workflow.steps.length} steps</span>
+                  <span>{workflow.steps.length} {workflow.steps.length === 1 ? "step" : "steps"}</span>
                 </span>
                 <span className="version">v{workflow.version}</span>
               </button>
@@ -856,7 +397,7 @@ export function WorkflowRegistry({
       <WorkflowEditor
         key={revision}
         token={token}
-        initial={records.find((workflow) => workflow.id === selected) ?? workflows.find((workflow) => workflow.id === selected) ?? (cachedWorkflow?.id === selected ? cachedWorkflow : null)}
+        initial={editing}
         onSaved={(workflow) => { setCachedWorkflow(workflow); choose(workflow.id); void entries.refetch(); }}
         onPreview={onPreview}
       />

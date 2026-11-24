@@ -1,5 +1,7 @@
 # ABRL implementation and release evidence
 
+This is a historical delivery report. The current workspace runs locally with Docker Compose.
+
 Date: 2026-11-12. This delivery extends the existing application with durable session management, scheduling, instrumented research, team access and an executable Hetzner deployment. It can run locally now. Production and provider acceptance remain open until the external gates in the [requirement ledger](requirements.md) are exercised.
 
 ## Delivered behavior

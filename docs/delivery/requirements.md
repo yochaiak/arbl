@@ -1,4 +1,6 @@
-# ABRL delivery evidence ledger
+# Historical ABRL delivery evidence ledger
+
+This document records the November 12, 2026 delivery. The current workspace runs locally with Docker Compose. Historical deployment and research entries here describe that earlier delivery.
 
 Last reviewed: 2026-11-12. This ledger distinguishes source implementation, automated checks, observed local execution, and external acceptance gates. **The release is not yet live-certified for Hetzner, licensed browsers, Oxylabs, or AdScore.** No simulated result counts as a live qualification.
 
@@ -39,7 +41,7 @@ Last reviewed: 2026-11-12. This ledger distinguishes source implementation, auto
 | Product-specific Oxylabs policies and inventory | Yes; product/geography/continuity/capacity/entitlement filters | Selection rationale, continuity, unknown cost, explicit fallback tests | Local policy/inventory UI | Real Oxylabs credentials, inventory and quota evidence |
 | Proxy transport health and bounded safe replacement | Yes; auth/quota pause, transport classification and environment epochs | Classification and ambiguous-action no-replay tests | Local broker fixture | Actual provider failures/expiry/rotation and Kameleo stop/update/restart |
 | Credential-isolating egress broker | Yes; separate session broker and browser pods; scoped capabilities | Broker authentication/expiry, remote cleanup and credential separation | Real local remote-browser/broker roundtrip | Deployed network-policy probes for all traffic classes |
-| Navigation/resource/DNS/redirect restrictions | Yes; primary and separately verified additional navigation origins; resource origins remain separate | Browser/network guard tests | Owned local fixtures | Upstream proxy DNS is an explicit trust boundary; every document origin requires separate ownership verification |
+| Navigation/resource/DNS/redirect restrictions | Yes; primary and additional document origins require deployment approval or ownership proof. Resource origins remain separate | Browser/network guard tests | Owned local fixtures | Upstream proxy DNS is an explicit trust boundary |
 | Browser direct egress denied in cloud | Yes; per-session network policies and isolated service accounts | Rendered manifests and capability tests | Pending | CNI enforcement, redirects, WebSockets and auxiliary-client probes on Hetzner |
 
 ## Scheduling and research
@@ -77,7 +79,6 @@ Last reviewed: 2026-11-12. This ledger distinguishes source implementation, auto
 ## Evidence index
 
 - [Implementation report](implementation-report.md): exact commands/results and remaining deployment prerequisites.
-- [Container and infrastructure evidence](../../deployment/validation.local.json): image IDs, architecture, source hashes, validation scope.
 - [Experiment run PDF](experiment-run.pdf), [run snapshot](experiment-run.json), [run dataset](experiment-run.csv): matched workflow strata and complete-run traceability.
 - [Rendered batch PDF](research-report.pdf), [page 1](research-report-1.png), [page 2](research-report-2.png), [dataset](research-report.csv), [snapshot](research-report.json), [HTML](research-report.html): explicitly simulated immutable report fixture.
 - `tests/test_platform.py`, `test_release_review.py`, `test_command_secrets.py`: persistence, permissions, scheduling and lifecycle evidence.

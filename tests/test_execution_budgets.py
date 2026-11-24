@@ -1,6 +1,8 @@
 """Bounded, measured browser requests and opaque transport forwarding."""
 
 import asyncio
+import socket
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
@@ -10,6 +12,7 @@ from test_browser import fixture as fixture
 from test_browser import never_cancel, request_through_proxy
 from test_remote_browser import runtime
 
+from abrl import network
 from abrl.browser import Execution, execute_workflow
 from abrl.network import EgressGuard, NetworkDenied
 from abrl.platform_schemas import BatchInput
@@ -105,6 +108,111 @@ def test_proxy_trials_cannot_silently_use_direct_local_fixture(fixture):
         EgressGuard(origin, [], lambda _: None, upstream=object())
 
 
+async def test_provider_tunnel_pins_automatic_asset_address(monkeypatch):
+    opened = []
+
+    async def resolve(host, port):
+        assert (host, port) == ("cdn.example", 443)
+        return ("8.8.4.4",)
+
+    async def upstream_connect(authority):
+        opened.append(authority)
+        return None
+
+    monkeypatch.setattr("abrl.network.resolve_public_ipv4", resolve)
+    guard = EgressGuard("https://owned.example", [], lambda _: None, upstream=object())
+    monkeypatch.setattr(guard, "_upstream_connect", upstream_connect)
+    assert guard.allow_asset_origin("https://cdn.example")
+    async with guard:
+        response = await request_through_proxy(guard.url, "CONNECT cdn.example:443 HTTP/1.1\r\n\r\n")
+    assert opened == ["8.8.4.4:443"]
+    assert response.startswith(b"HTTP/1.1 502")
+
+
+@pytest.mark.parametrize(
+    "resolver_error, response_code, transient",
+    [(socket.EAI_AGAIN, b"502", True), (socket.EAI_NONAME, b"403", False)],
+)
+async def test_broker_distinguishes_transient_and_permanent_target_dns(monkeypatch, resolver_error, response_code, transient):
+    async def resolve(*_args, **_kwargs):
+        raise socket.gaierror(resolver_error, "private resolver detail")
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", resolve)
+    denied = []
+    async with EgressGuard("https://owned.example", [], denied.append) as guard:
+        response = await request_through_proxy(guard.url, "CONNECT owned.example:443 HTTP/1.1\r\n\r\n")
+
+    assert response.startswith(b"HTTP/1.1 " + response_code)
+    assert guard.transport_summary()["active_connections"] == 0
+    assert guard.transport_summary()["attempts"] == guard.transport_summary()["failures"] == int(transient)
+    if transient:
+        assert not denied
+        [issue] = guard.transport_events
+        assert issue["reason"] == "target_dns_unavailable" and issue["retryable"]
+        assert issue["tunnel_wait"]["stage"] == "target_dns"
+    else:
+        assert denied == ["No usable IPv4 DNS answer for the registered origin"]
+        assert not guard.transport_events
+
+
+@pytest.mark.parametrize(
+    ("failure", "reply", "evidence", "attempts"),
+    [
+        ("local_dns", b"403", {"source": "local_proxy", "reason": "local_dns_denied", "http_status": 403}, 0),
+        ("provider_http", b"502", {"source": "decodo", "reason": "proxy_tunnel_failed", "http_status": 522}, 1),
+        ("provider_connection", b"502", {"source": "upstream_connection", "reason": "proxy_tunnel_failed"}, 1),
+    ],
+)
+async def test_connect_observer_distinguishes_local_and_provider_failures(monkeypatch, failure, reply, evidence, attempts):
+    secondary = "https://secondary.example"
+    origins, reports = [], []
+
+    def observe(origin):
+        origins.append(origin)
+        return reports.append
+
+    def observe_denial(_):
+        pytest.fail("The secondary origin should not stop the primary assignment.")
+
+    async def resolve(host, port):
+        if host == "secondary.example" and failure == "local_dns":
+            raise NetworkDenied("private resolver error")
+        return ("192.0.2.7",)
+
+    original_connect = asyncio.open_connection
+
+    class ProviderWriter(Sink):
+        async def wait_closed(self):
+            pass
+
+    async def connect(host, port, **kwargs):
+        if host == "127.0.0.1":
+            return await original_connect(host, port, **kwargs)
+        assert (host, port) == ("192.0.2.7", 7000)
+        if failure == "provider_connection":
+            raise OSError("private provider connection error")
+        source = asyncio.StreamReader()
+        source.feed_data(b"HTTP/1.1 522 Connection timed out\r\nX-Error-Description: private provider text\r\n\r\n")
+        return source, ProviderWriter()
+
+    monkeypatch.setattr(network, "resolve_public_ipv4", resolve)
+    monkeypatch.setattr(network.asyncio, "open_connection", connect)
+    fake_provider = SimpleNamespace(
+        provider="decodo", host="provider.example", port=7000, authorization=lambda: b"Basic fake",
+    )
+    async with EgressGuard(
+        "https://owned.example", [], observe_denial, upstream=fake_provider,
+        navigation_origins=[secondary], observe_connect=observe,
+    ) as guard:
+        response = await request_through_proxy(guard.url, "CONNECT secondary.example:443 HTTP/1.1\r\n\r\n")
+
+    assert response.startswith(b"HTTP/1.1 " + reply)
+    assert origins == [secondary]
+    assert reports == [evidence]
+    assert guard.transport_summary()["attempts"] == attempts
+    assert guard.transport_summary()["failures"] == attempts
+
+
 @pytest.mark.integration
 async def test_real_browser_counts_each_http_request_once_and_stops_next_navigation(chromium, fixture):
     origin, visited, _ = fixture
@@ -178,24 +286,34 @@ async def test_redirect_hops_count_against_http_budget(chromium, fixture):
     assert [(method, path) for method, path, _ in visited] == [("GET", "/lab?redirect")]
 
 
-async def test_reserved_connection_load_rejects_excess_without_waiting_for_idle_tunnel(fixture):
-    origin, visited, received = fixture
-    async with EgressGuard(origin, [], lambda _: None, max_connections=1) as guard:
+@pytest.mark.parametrize("limit", [1, 100])
+async def test_reserved_connection_load_rejects_excess_without_waiting_for_idle_tunnel(fixture, limit):
+    origin, visited, _ = fixture
+
+    async def wait_for_open_connections():
+        while len(visited) < limit:
+            await asyncio.sleep(0.01)
+
+    async with EgressGuard(origin, [], lambda _: None, max_connections=limit) as guard:
         location = urlsplit(guard.url)
-        reader, writer = await asyncio.open_connection(location.hostname, location.port)
-        writer.write(f"GET {origin}/lab?slow HTTP/1.1\r\nHost: fixture\r\n\r\n".encode())
-        await writer.drain()
-        await asyncio.wait_for(received.wait(), 2)
-        result = await asyncio.wait_for(
-            request_through_proxy(guard.url, f"GET {origin}/lab HTTP/1.1\r\nHost: fixture\r\n\r\n"), 1
-        )
-        assert result.startswith(b"HTTP/1.1 503")
-        assert len(visited) == 1
-        assert guard.transport_summary()["peak_connections"] == 1
-        assert guard.transport_summary()["capacity_rejections"] == 1
-        assert guard.transport_events[-1]["retryable"] is False
-        writer.close()
-        await writer.wait_closed()
+        writers = []
+        try:
+            for _ in range(limit):
+                _, writer = await asyncio.open_connection(location.hostname, location.port)
+                writers.append(writer)
+                writer.write(f"GET {origin}/lab?slow HTTP/1.1\r\nHost: fixture\r\n\r\n".encode())
+                await writer.drain()
+            await asyncio.wait_for(wait_for_open_connections(), 5)
+            result = await request_through_proxy(guard.url, f"GET {origin}/lab HTTP/1.1\r\nHost: fixture\r\n\r\n")
+            assert result.startswith(b"HTTP/1.1 503")
+            assert len(visited) == limit
+            assert guard.transport_summary()["peak_connections"] == limit
+            assert guard.transport_summary()["capacity_rejections"] == 1
+            assert guard.transport_events[-1]["retryable"] is False
+        finally:
+            for writer in writers:
+                writer.close()
+            await asyncio.gather(*(writer.wait_closed() for writer in writers))
     assert guard.transport_summary()["active_connections"] == 0
 
 

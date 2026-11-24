@@ -12,11 +12,13 @@ import test_platform
 from sqlalchemy import select
 from test_platform import client, create, data
 
-from abrl import session_artifacts, session_runner
+from abrl import platform_service, session_artifacts, session_runner
 from abrl.browser import BrowserResult
+from abrl.db import TargetVersion
 from abrl.platform_models import (
     BrowserProfile,
     BrowserSession,
+    Project,
     ProviderObservation,
     Schedule,
     ScheduledOccurrence,
@@ -49,7 +51,7 @@ def expire_runtime(factory, work):
 
 
 def test_paused_batch_remains_paused_when_one_of_two_active_sessions_finishes(db):
-    batch, first = admitted_work(db, count=3, concurrency=2)
+    batch, first = admitted_work(db, count=3, concurrency=2, mode="demo")
     second = session_runner.claim("standard")
     assert second is not None
     with client() as api:
@@ -110,8 +112,6 @@ def test_expired_runtime_cannot_consume_a_queued_manual_input(db):
 
 
 def test_quarantined_runtime_still_reserves_project_admission_capacity(db):
-    from abrl.platform_models import Project
-
     with db.begin() as connection:
         connection.get(Project, "default").concurrency = 1
     _, work = admitted_work(db, count=2, concurrency=2)
@@ -126,12 +126,73 @@ def test_quarantined_runtime_still_reserves_project_admission_capacity(db):
         )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("limited_scope", "expected_demo_sessions"), [("target", 2), ("project", 0)])
+async def test_demo_admission_ignores_live_quarantine_only_at_target_limit(
+    db, monkeypatch, tmp_path, limited_scope, expected_demo_sessions
+):
+    monkeypatch.setattr(
+        platform_service, "execution_capabilities", lambda: [{"id": "playwright", "available": True}]
+    )
+    monkeypatch.setattr(session_runner, "WORK_ROOT", tmp_path / "work")
+    with db.begin() as connection:
+        if limited_scope == "project":
+            connection.get(Project, "default").concurrency = 1
+        else:
+            target = connection.get(TargetVersion, ("target", 1))
+            target.config = {**target.config, "concurrency": 1}
+
+    live_batch, live = admitted_work(db, mode="live", count=2, concurrency=2)
+    session_runner.record_activity(live, {"kind": "workflow_started"})
+    demo_request = data(mode="demo", count=2, concurrency=1, seed=1).model_copy(
+        update={"idempotency_key": "demo-batch"}
+    )
+    with db.begin() as connection:
+        demo_batch = platform_service.create_batch(connection, demo_request, "default")
+        session_runner.admission_tick(connection)
+    assert session_runner.claim("standard") is None
+
+    expire_runtime(db, live)
+    for _ in range(expected_demo_sessions):
+        with db.begin() as connection:
+            session_runner.admission_tick(connection)
+        demo = session_runner.claim("standard")
+        assert demo is not None and demo.mode == "demo"
+        with db.begin() as connection:
+            session_runner.admission_tick(connection)
+        assert session_runner.claim("standard") is None
+        await session_runner.execute(demo)
+
+    with db.begin() as connection:
+        session_runner.admission_tick(connection)
+        demo_view = platform_service.batch_view(connection, connection.get(SessionBatch, demo_batch.id))
+        if expected_demo_sessions:
+            assert demo_view["status"] == "completed" and demo_view["counts"] == {"completed": 2}
+        else:
+            assert demo_view["status"] == "queued" and demo_view["counts"] == {"queued": 2}
+        assert connection.get(SessionBatch, live_batch.id).status == "running"
+        live_session = connection.get(BrowserSession, live.id)
+        assert live_session.status == "failed" and live_session.lease_token == live.lease
+        profile = connection.get(BrowserProfile, live.profile_id)
+        assert profile.status == "quarantined" and profile.owner_session_id == live.id
+        assert profile.epoch == live.epoch
+        sibling = connection.scalar(
+            select(BrowserSession).where(
+                BrowserSession.batch_id == live_batch.id, BrowserSession.id != live.id
+            )
+        )
+        assert sibling is not None and sibling.status == "queued" and not sibling.admitted
+    assert session_runner.claim("standard") is None
+
+
 def test_skip_overlap_waits_for_cancelling_batch_to_stop(db):
     prior, work = admitted_work(db)
     instant = datetime.now(UTC)
     with db.begin() as connection:
         connection.get(SessionBatch, prior.id).status = "cancelling"
         connection.get(BrowserSession, work.id).status = "stopping"
+        target = connection.get(TargetVersion, ("target", 1))
+        target.config = {**target.config, "origin": "https://schedule.example"}
         batch = data()
         config = ScheduleInput(
             name="Overlap safety",

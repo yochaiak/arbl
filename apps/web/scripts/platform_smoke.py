@@ -1,17 +1,17 @@
 """Browser acceptance for platform controls against the running local API.
 
-Creates explicitly named demonstration batches and a paused schedule. Optional
+Creates explicitly named live fixture batches and a paused schedule. Optional
 large-list/viewer checks use intercepted UI fixtures, never stored research data.
 Run: uv run python apps/web/scripts/platform_smoke.py
 """
 import base64
-import json
 import os
 import time
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 import httpx
+from batch_picker import choose_batch_option
 from dotenv import load_dotenv
 from playwright.sync_api import expect, sync_playwright
 
@@ -27,8 +27,9 @@ def run():
     headers = {"Authorization": "Bearer " + token, "X-Project-ID": "default"}
     client = httpx.Client(base_url=API + "/api/v1", headers=headers, timeout=30)
     client.get("/projects").raise_for_status()
-    client.post("/starter").raise_for_status()
+    client.post(API + "/test/seed").raise_for_status()
     target = next(t for t in client.get("/targets").json() if t["name"] == "ABRL controlled test site")
+    schedule_target = next(t for t in client.get("/targets").json() if t["name"] == "ABRL schedule test site")
     workflow = next(w for w in client.get("/workflows").json() if w["name"] == "Landing check")
     stamp = str(int(time.time()))
     errors = []
@@ -49,15 +50,17 @@ def run():
         page.get_by_role("button", name="Create batch", exact=True).click()
         dialog = page.get_by_role("dialog")
         dialog.get_by_label("Batch name", exact=True).fill("UI acceptance " + stamp)
-        dialog.get_by_label("Authorized site", exact=True).select_option(target["id"])
-        dialog.get_by_label("Workflow", exact=True).select_option(workflow["id"])
+        choose_batch_option(dialog, "Site", target["name"])
+        choose_batch_option(dialog, "Workflow", workflow["name"])
         dialog.get_by_label("Independent sessions", exact=True).fill("3")
         dialog.get_by_label("Maximum concurrency", exact=True).fill("2")
-        dialog.get_by_role("button", name="Automated preparation", exact=True).click()
-        expect(dialog.get_by_text("Recorded as automated activity", exact=False)).to_be_visible()
-        dialog.get_by_role("button", name="None", exact=True).click()
-        dialog.get_by_role("button", name="Review batch", exact=True).click()
-        expect(dialog.get_by_role("heading", name="3 independent sessions")).to_be_visible()
+        for label in ("Evidence source", "Reusable session configuration", "Preparation", "Research declaration"):
+            expect(dialog.get_by_text(label, exact=True)).to_have_count(0)
+        dialog.locator("summary").filter(has_text="Advanced").click()
+        expect(dialog.get_by_label("Screenshot and console capture")).to_have_value("all")
+        expect(dialog.get_by_label("Capture JavaScript assets and execution coverage")).to_be_checked()
+        ready = dialog.get_by_role("group", name="Launch readiness")
+        expect(ready.get_by_text("3 sessions · 2 maximum concurrent", exact=True)).to_be_visible()
         dropped = []
         def dropped_ack(route):
             if route.request.method == "POST" and not dropped:
@@ -70,7 +73,7 @@ def run():
         page.route("**/api/v1/batches", dropped_ack)
         dialog.get_by_role("button", name="Create batch", exact=True).click()
         expect(dialog.get_by_role("alert")).to_be_visible()
-        dialog.get_by_role("button", name="Create batch", exact=True).click()
+        dialog.get_by_role("button", name="Retry original launch", exact=True).click()
         expect(dialog).not_to_be_visible()
         page.unroute("**/api/v1/batches", dropped_ack)
         expect(page.get_by_role("list", name="Browser sessions")).to_be_visible()
@@ -79,7 +82,8 @@ def run():
         batch = next(b for b in batches if b["name"] == "UI acceptance " + stamp)
         assert len([b for b in batches if b["name"] == "UI acceptance " + stamp]) == 1
         assert batch["count"] == 3 and batch["concurrency"] == 2
-        assert batch["mode"] == "demo"
+        assert batch["mode"] == "live"
+        assert batch["config"]["artifact_policy"] == "all" and batch["config"]["capture_javascript"] is True
 
         page.get_by_role("button", name="Profiles", exact=True).click()
         page.get_by_role("button", name="New profile", exact=True).click()
@@ -122,6 +126,8 @@ def run():
         navigation.get_by_role("button", name="Schedules", exact=True).click()
         page.get_by_role("button", name="New schedule", exact=True).click()
         dialog.get_by_label("Schedule name").fill("UI schedule " + stamp)
+        dialog.get_by_role("button", name="Configure sessions", exact=True).click()
+        choose_batch_option(dialog, "Site", schedule_target["name"])
         dialog.get_by_role("button", name="Preview schedule", exact=True).click()
         expect(dialog.locator(".schedule-preview li").first).to_be_visible()
         page.screenshot(path=SCREENSHOTS / "schedule-builder.png", full_page=True)
@@ -130,35 +136,14 @@ def run():
         expect(page.get_by_role("table").get_by_text("UI schedule " + stamp, exact=True)).to_be_visible()
         page.get_by_role("button", name="Pause UI schedule " + stamp).click()
         expect(page.get_by_role("button", name="Resume UI schedule " + stamp)).to_be_visible()
-        page.get_by_role("button", name="UI schedule " + stamp, exact=True).click()
+        page.get_by_role("table").get_by_role("button", name="UI schedule " + stamp, exact=True).click()
         dialog.get_by_label("Interval in seconds", exact=True).fill("7200")
         dialog.get_by_role("button", name="Save schedule version", exact=True).click()
         expect(dialog).not_to_be_visible()
         expect(page.get_by_role("button", name="Resume UI schedule " + stamp)).to_be_visible()
 
 
-        navigation.get_by_role("button", name="Research", exact=True).click()
-        page.get_by_label("Research batch").select_option(batch["id"])
-        expect(page.get_by_role("heading", name="Group evidence", exact=True)).to_be_visible(timeout=30000)
-        expect(page.get_by_text("demo", exact=True).first).to_be_visible()
-        for heading in ["Verified provider verdicts", "Reliability and 95% intervals", "Completion trend over time", "Session latency distribution", "Execution progress", "Execution attempt performance", "Browser × environment reliability", "Individual trial outcome matrix", "Experiment execution timeline"]:
-            expect(page.get_by_role("heading", name=heading, exact=True)).to_be_visible()
-        page.locator(".trial-matrix button").first.click()
-        expect(dialog.get_by_text("Ground truth", exact=True)).to_be_visible()
-        dialog.get_by_role("button", name="Close dialog").click()
-
-        # The immutable export is intentionally unavailable until all sessions finish.
-        for _ in range(60):
-            latest = next(b for b in client.get("/batches?limit=100").json()["items"] if b["id"] == batch["id"])
-            if latest["status"] == "completed":
-                break
-            page.wait_for_timeout(1000)
-        expect(page.get_by_role("button", name="JSON", exact=True)).to_be_enabled(timeout=15000)
-        with page.expect_download() as download:
-            page.get_by_role("button", name="JSON", exact=True).click()
-        exported = json.loads(download.value.path().read_text())
-        assert exported.get("mode", exported.get("comparison", {}).get("mode")) == "demo"
-        page.screenshot(path=SCREENSHOTS / "research.png", full_page=True)
+        expect(navigation.get_by_role("button", name="Research", exact=True)).to_have_count(0)
 
         unavailable = next((adapter for adapter in client.get("/adapters").json() if adapter["id"] in ("kameleo", "cloakbrowser") and not adapter["available"]), None)
         if unavailable:
@@ -239,7 +224,7 @@ def run():
         page.get_by_role("button", name="Close session details").click()
 
         page.set_viewport_size({"width": 390, "height": 844})
-        for name in ["Overview", "Sessions", "Schedules", "Network", "Research", "Fleet & settings", "Workflows", "Sites"]:
+        for name in ["Overview", "Sessions", "Schedules", "Network", "Fleet & settings", "Workflows", "Sites"]:
             navigation.get_by_role("button", name=name, exact=True).click()
             expect(page.get_by_role("heading", name=name, exact=True, level=1)).to_be_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), name
@@ -247,8 +232,8 @@ def run():
         page.screenshot(path=SCREENSHOTS / "mobile-sessions.png", full_page=True)
         page.keyboard.press("Tab")
         assert page.evaluate("document.activeElement.tagName") != "BODY"
-        long_origin = "https://" + ".".join(["authorized-layout-fixture-" + "x" * 32] * 3) + ".example.test"
-        long_target = {**target, "id": "ui-long-origin-layout", "name": "UI long-origin layout fixture", "origin": long_origin, "verified": False, "proof_token": None}
+        long_origin = "https://" + ".".join(["layout-fixture-" + "x" * 40] * 3) + ".example.test"
+        long_target = {**target, "id": "ui-long-origin-layout", "name": "UI long-origin layout fixture", "origin": long_origin}
         page.route("**/api/v1/targets*", lambda route: route.fulfill(json=[long_target], headers={"X-Total-Count": "1"}))
         page.goto(WEB + "?view=sites")
         page.get_by_role("button", name="UI long-origin layout fixture", exact=False).click()
@@ -258,7 +243,7 @@ def run():
 
         assert not errors, errors
         browser.close()
-    print("Platform UI acceptance passed: real controls, persisted demo data; isolated 500-row/viewer fixtures.")
+    print("Platform UI acceptance passed with live fixture batches and isolated 500-row and viewer checks.")
 
 if __name__ == "__main__":
     run()
