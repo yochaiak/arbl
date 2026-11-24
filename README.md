@@ -58,16 +58,18 @@ make test
 make lint typecheck
 make build
 make migration-test                   # fresh temporary PostgreSQL database
-make profile-test                     # real Chromium save/restore on owned local fixture
 pnpm --dir apps/web generate:api      # regenerate contracts after API changes
 ```
 
-Start `make dev-fixtures` for integration tests and fixture-based UI smoke scripts. It enables the local test fixture and seeding endpoint. Both development commands use the same ports.
+Start `make dev-fixtures` for integration tests, the Chromium save and restore check, and fixture-based UI smoke scripts. It enables the local test fixture and seeding endpoint. Both development commands use the same ports.
 
 ```sh
 make integration-test
+make profile-test
 PYTHONPATH=. uv run python apps/web/scripts/platform_smoke.py
 PYTHONPATH=. uv run python apps/web/scripts/workflows_smoke.py
 ```
+
+`make profile-test` verifies that two independent Chromium profiles preserve their visit cookies after restore and records the snapshot generations in `.abrl/evidence/session-roundtrip.json`.
 
 See [architecture](docs/architecture.md) for persistence, fencing, event delivery and operational limits. Historical sessions retain their original source and observations.

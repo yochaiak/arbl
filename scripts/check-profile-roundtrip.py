@@ -1,4 +1,4 @@
-"""Run two owned local Chromium profiles, restore them, and preserve acceptance evidence."""
+"""Verify Chromium profile persistence against the owned local fixture."""
 
 import json
 import time
@@ -7,81 +7,116 @@ from pathlib import Path
 
 import httpx
 
-from abrl.config import OPERATOR_TOKEN
+from abrl.config import API_ORIGIN, OPERATOR_TOKEN
 
-terminal = {"completed", "failed", "blocked", "cancelled", "needs_reconciliation"}
-with httpx.Client(
-    base_url="http://127.0.0.1:8400/api/v1",
-    headers={"Authorization": "Bearer " + OPERATOR_TOKEN},
-    timeout=15,
-) as c:
+TERMINAL = {"completed", "failed", "blocked", "cancelled", "needs_reconciliation"}
 
-    def post(path, value):
-        r = c.post(path, json=value)
-        r.raise_for_status()
-        return r.json()
 
-    target = post(
-        "/targets",
-        {
-            "name": "Live session acceptance " + uuid.uuid4().hex[:6],
-            "origin": "http://127.0.0.1:8400",
-            "mode": "browser_only",
-            "rate_limit": 60,
-            "concurrency": 2,
-            "authorized": True,
-        },
-    )
-    workflow = post(
-        "/workflows",
-        {
-            "name": "Persistent repeat evidence",
-            "steps": [
-                {"action": "navigate", "url": "/lab/repeat"},
-                {"action": "extract", "selector": "#visit-count"},
-                {"action": "assert_visible", "selector": "#visit-count"},
-            ],
-        },
-    )
-    template = {
-        "name": "Live persistence acceptance",
-        "target_id": target["id"],
-        "workflow_id": workflow["id"],
-        "mode": "live",
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def batch_sessions(api, batch_id):
+    deadline = time.monotonic() + 70
+    while time.monotonic() < deadline:
+        response = api.get("/sessions", params={"batch_id": batch_id})
+        rows = response.raise_for_status().json()["items"]
+        if len(rows) == 2 and all(row["status"] in TERMINAL for row in rows):
+            return sorted(rows, key=lambda row: row["ordinal"])
+        time.sleep(0.5)
+    raise RuntimeError("Timed out waiting for both fixture sessions. Check the scheduler and standard runner.")
+
+
+def profile_snapshots(api, profile_id):
+    response = api.get(f"/profiles/{profile_id}/snapshots")
+    return response.raise_for_status().json()["items"]
+
+
+def verify_roundtrip(api, target_id):
+    def post(path, payload):
+        return api.post(path, json=payload).raise_for_status().json()
+
+    launch = {
+        "name": "Chromium profile roundtrip",
+        "target_id": target_id,
         "count": 2,
         "concurrency": 2,
         "adapters": ["playwright"],
         "persistence": "persistent",
-        "preparation": {"mode": "automated", "min_seconds": 2, "max_seconds": 2, "paths": ["/lab"]},
-        "idempotency_key": "live-" + uuid.uuid4().hex,
+        "artifact_policy": "none",
+        "capture_javascript": False,
     }
+    profiles = []
+    initial_snapshots = {}
     evidence = []
-    for generation in range(2):
-        batch = post("/batches", template)
-        deadline = time.monotonic() + 70
-        while time.monotonic() < deadline:
-            rows = c.get("/sessions", params={"batch_id": batch["id"]}).json()["items"]
-            if len(rows) == 2 and all(r["status"] in terminal for r in rows):
-                break
-            time.sleep(0.5)
-        print(
-            "Generation",
-            generation + 1,
-            [(r["status"], r["error"], r["metadata"].get("profile_saved")) for r in rows],
-        )
-        assert len(rows) == 2 and all(r["status"] == "completed" for r in rows), rows
-        if generation:
-            assert all(r["metadata"].get("input_profile_snapshot") for r in rows)
-        evidence.append({"batch_id": batch["id"], "sessions": rows})
-        template = {
-            **template,
-            "name": "Live persistence restore acceptance",
-            "profile_ids": [r["profile_id"] for r in sorted(rows, key=lambda r: r["ordinal"])],
-            "idempotency_key": "restore-" + uuid.uuid4().hex,
-        }
-    for r in rows:
-        snapshots = c.get("/profiles/" + r["profile_id"] + "/snapshots").json()
-        assert snapshots["total"] == 2, snapshots
-    Path(".abrl/evidence").mkdir(parents=True, exist_ok=True)
-    Path(".abrl/evidence/session-roundtrip.json").write_text(json.dumps(evidence, indent=2))
-    print("Real Chromium session restore and exclusive snapshots verified")
+    for visit in (1, 2):
+        workflow = post("/workflows", {
+            "name": f"Chromium profile roundtrip visit {visit}",
+            "steps": [
+                {"action": "navigate", "url": "/lab/repeat?persistent=1"},
+                {"action": "assert_text", "selector": "#visit-count", "value": str(visit)},
+            ],
+        })
+        batch = post("/batches", {
+            **launch, "workflow_id": workflow["id"], "profile_ids": profiles,
+            "idempotency_key": "profile-roundtrip-" + uuid.uuid4().hex,
+        })
+        rows = batch_sessions(api, batch["id"])
+        statuses = ", ".join(row["status"] for row in rows)
+        require(all(row["status"] == "completed" for row in rows), f"Visit {visit} did not complete ({statuses}).")
+        assigned = [row["profile_id"] for row in rows]
+        require(len(set(assigned)) == 2, "Expected two independent Chromium profiles.")
+        require(visit == 1 or assigned == profiles, "Restore batch used a different profile assignment.")
+        profiles = assigned
+
+        sessions = []
+        for row in rows:
+            profile_id = row["profile_id"]
+            metadata = row["metadata"]
+            require(metadata.get("profile_saved") is True, f"Visit {visit} did not save its profile.")
+            snapshots = profile_snapshots(api, profile_id)
+            generations = [snapshot["generation"] for snapshot in snapshots]
+            require(generations == list(range(visit, 0, -1)), f"Unexpected snapshot generations on visit {visit}.")
+            restored = metadata.get("input_profile_snapshot")
+            if visit == 1:
+                require(not restored, "Initial launch unexpectedly restored a snapshot.")
+                initial_snapshots[profile_id] = snapshots[0]["checksum"]
+            else:
+                require(metadata.get("profile_launch_state") == "restored", "Chromium did not confirm profile restore.")
+                require(
+                    restored and restored.get("checksum") == initial_snapshots[profile_id] == snapshots[1]["checksum"],
+                    "The resumed session did not use the snapshot saved by its initial launch.",
+                )
+            sessions.append({
+                "session_id": row["id"], "profile_id": profile_id,
+                "visit_count": visit, "snapshot_generations": generations,
+            })
+        evidence.append({"batch_id": batch["id"], "sessions": sessions})
+        print(f"Visit {visit} confirmed for both profiles with snapshot generation {visit}.")
+    return evidence
+
+
+def main():
+    require(OPERATOR_TOKEN, "Set the local operator token and start make dev-fixtures.")
+    with httpx.Client(
+        base_url=f"{API_ORIGIN}/api/v1",
+        headers={"Authorization": f"Bearer {OPERATOR_TOKEN}"},
+        timeout=15,
+        trust_env=False,
+    ) as api:
+        fixture = api.post(f"{API_ORIGIN}/test/seed")
+        require(fixture.status_code != 404, "Start make dev-fixtures before running make profile-test.")
+        target_id = fixture.raise_for_status().json()["target_id"]
+        evidence = verify_roundtrip(api, target_id)
+    path = Path(".abrl/evidence/session-roundtrip.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(evidence, indent=2) + "\n")
+    print("Chromium save and restore verified for two independent profiles.")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (httpx.HTTPError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from None

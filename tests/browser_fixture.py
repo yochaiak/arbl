@@ -124,13 +124,17 @@ def lab_finish() -> HTMLResponse:
 
 
 @router.get("/lab/repeat")
-def lab_repeat(request: Request) -> HTMLResponse:
-    previous = request.cookies.get("abrl_lab_visit", "")
+def lab_repeat(request: Request, persistent: bool = False) -> HTMLResponse:
+    cookie = "abrl_profile_visit" if persistent else "abrl_lab_visit"
+    previous = request.cookies.get(cookie, "")
     count = min(int(previous), 9998) + 1 if re.fullmatch(r"[0-9]{1,4}", previous) else 1
     response = _page(
         "Repeat visit", f'<p>Visits in this browser session: <output id="visit-count">{count}</output></p>'
     )
-    response.set_cookie("abrl_lab_visit", str(count), httponly=True, samesite="strict", path="/lab/repeat")
+    response.set_cookie(
+        cookie, str(count), max_age=300 if persistent else None,
+        httponly=True, samesite="strict", path="/lab/repeat",
+    )
     return response
 
 
